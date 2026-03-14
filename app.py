@@ -338,28 +338,31 @@ def voice_input_widget(label="🎤 Tap to Speak", key="voice"):
     """
     st.components.v1.html(voice_html, height=200)
 
-
+# ============================================================
+# NEWS2 SCORE CALCULATOR
+# ============================================================
+def calc_news2(rr, spo2, supp_o2, sbp, hr, temp, avpu):
     s = 0
-    if rr <= 8 or rr >= 25: s += 3
-    elif 9  <= rr <= 11:    s += 1
-    elif 21 <= rr <= 24:    s += 2
-    if spo2 <= 91:          s += 3
-    elif 92 <= spo2 <= 93:  s += 2
-    elif 94 <= spo2 <= 95:  s += 1
-    if supp_o2:             s += 2
-    if sbp <= 90 or sbp >= 220: s += 3
-    elif 91  <= sbp <= 100: s += 2
-    elif 101 <= sbp <= 110: s += 1
-    if hr <= 40 or hr >= 131:   s += 3
+    if rr <= 8 or rr >= 25:                  s += 3
+    elif 9  <= rr <= 11:                     s += 1
+    elif 21 <= rr <= 24:                     s += 2
+    if spo2 <= 91:                           s += 3
+    elif 92 <= spo2 <= 93:                   s += 2
+    elif 94 <= spo2 <= 95:                   s += 1
+    if supp_o2:                              s += 2
+    if sbp <= 90 or sbp >= 220:              s += 3
+    elif 91  <= sbp <= 100:                  s += 2
+    elif 101 <= sbp <= 110:                  s += 1
+    if hr <= 40 or hr >= 131:                s += 3
     elif 41 <= hr <= 50 or 111 <= hr <= 130: s += 2
-    elif 91 <= hr <= 110:   s += 1
-    if temp <= 35.0:        s += 3
-    elif temp <= 36.0:      s += 1
-    elif temp >= 39.1:      s += 2
-    elif temp >= 38.1:      s += 1
+    elif 91 <= hr <= 110:                    s += 1
+    if temp <= 35.0:                         s += 3
+    elif temp <= 36.0:                       s += 1
+    elif temp >= 39.1:                       s += 2
+    elif temp >= 38.1:                       s += 1
     avpu_map = {"Alert":0,"Confusion/New":3,"Voice":3,"Pain":3,"Unresponsive":3}
     s += avpu_map.get(avpu, 0)
-    if s >= 7:   return s, "HIGH",        "🔴", "IMMEDIATE senior review — consider ICU Level 3"
+    if s >= 7:   return s, "HIGH",        "🔴", "IMMEDIATE senior review - consider ICU Level 3"
     elif s >= 5: return s, "MEDIUM-HIGH", "🟠", "Urgent review within 30 minutes"
     elif s >= 3: return s, "MEDIUM",      "🟡", "Increase monitoring, review within 1 hour"
     else:        return s, "LOW",         "🟢", "Continue routine monitoring"
