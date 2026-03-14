@@ -1,59 +1,56 @@
-# ============================================================
-#  DR. GILL'S CARDIAC & CRITICAL CARE COMMAND SYSTEM  v2.0
-#  Kerala Cardiac ICU - World-Class AI Clinical Platform
-#  Built by: Chief AI Architect (Generative AI Agent)
-#  Date: 2025
-# ============================================================
-
 import streamlit as st
-import google.generativeai as genai
 import os
 import requests
 import pandas as pd
-from fpdf import FPDF
 import tempfile
 import datetime
 import random
 import string
-import json
-from PIL import Image
-import io
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+
+try:
+    from fpdf import FPDF
+    FPDF_AVAILABLE = True
+except ImportError:
+    FPDF_AVAILABLE = False
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 # ============================================================
-# SECTION 1: PAGE SETUP
+# PAGE CONFIG
 # ============================================================
 st.set_page_config(
-    page_title="Dr. Gill's Cardiac ICU Command System v2.0",
+    page_title="Dr. Gill's Cardiac ICU v2.0",
     layout="wide",
     page_icon="🏥",
     initial_sidebar_state="collapsed"
 )
 
 # ============================================================
-# SECTION 2: MASTER CREDENTIALS (YOUR PRIVATE VAULT)
+# MASTER PASSWORD & CREDENTIALS
 # ============================================================
-# ╔═══════════════════════════════════════════════════════════╗
-# ║  🔐 YOUR MASTER PASSWORD IS:  GILL@ICU#2025              ║
-# ║  Keep this ONLY with yourself. Never share this.          ║
-# ║  This gives you GOD-MODE access to everything.            ║
-# ╚═══════════════════════════════════════════════════════════╝
 MASTER_PASSWORD = "GILL@ICU#2025"
-MASTER_NAME     = "Dr. G.S. Gill (MASTER ADMIN | HOD Cardiology)"
+MASTER_NAME     = "Dr. G.S. Gill (MASTER ADMIN)"
 
-# Google Sheets Webhook — same as your original
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwIBxF5vh7uvdDnRblpyhfpQCtpcxWN3MlGjbt3SUeEO5KH3c9AIcU91BzeKVQKCn_L/exec"
 
-# ============================================================
-# SECTION 3: DEFAULT DOCTOR DATABASE (Admin can expand this)
-# ============================================================
 DEFAULT_DOCTORS = {
     "9999": {"name": "Dr. Alok Sehgal",  "role": "Senior Interventional Cardiologist", "access": "HOD"},
-    "1234": {"name": "Dr. G.S. Gill",     "role": "Cardiac Physician",                  "access": "Senior"},
-    "0000": {"name": "Dr. Shivam Tomar",  "role": "Cardiac Physician",                  "access": "Resident"},
+    "1234": {"name": "Dr. G.S. Gill",    "role": "Cardiac Physician",                  "access": "Senior"},
+    "0000": {"name": "Dr. Shivam Tomar", "role": "Cardiac Physician",                  "access": "Resident"},
 }
 
 # ============================================================
-# SECTION 4: SESSION STATE INITIALIZATION
+# SESSION STATE
 # ============================================================
 if "logged_in"      not in st.session_state: st.session_state.logged_in      = False
 if "current_user"   not in st.session_state: st.session_state.current_user   = None
@@ -61,11 +58,11 @@ if "is_master"      not in st.session_state: st.session_state.is_master      = F
 if "patients_db"    not in st.session_state: st.session_state.patients_db    = {}
 if "doctors_db"     not in st.session_state: st.session_state.doctors_db     = DEFAULT_DOCTORS.copy()
 if "icu_beds"       not in st.session_state: st.session_state.icu_beds       = {f"Bed {i}": "Empty" for i in range(1, 13)}
-if "handover_notes" not in st.session_state: st.session_state.handover_notes = []
 if "audit_log"      not in st.session_state: st.session_state.audit_log      = []
+if "handover_notes" not in st.session_state: st.session_state.handover_notes = []
 
 # ============================================================
-# SECTION 5: API ENGINE SETUP
+# API SETUP
 # ============================================================
 active_key = ""
 if "GEMINI_API_KEY" in st.secrets:
@@ -74,69 +71,80 @@ else:
     active_key = os.getenv("GEMINI_API_KEY", "")
 
 is_engine_ready = False
-if active_key and active_key.startswith("AIza"):
+if GENAI_AVAILABLE and active_key and active_key.startswith("AIza"):
     try:
         genai.configure(api_key=active_key)
         is_engine_ready = True
-    except Exception as e:
-        st.error(f"Engine Config Error: {e}")
+    except Exception:
+        pass
 
 # ============================================================
-# SECTION 6: HELPER — LOG EVERY ACTION (AUDIT TRAIL)
+# HELPER FUNCTIONS
 # ============================================================
-def log_action(action_text):
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def log_action(text):
+    ts   = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     user = st.session_state.current_user or "Unknown"
-    st.session_state.audit_log.insert(0, f"[{ts}] {user} → {action_text}")
-    if len(st.session_state.audit_log) > 200:
-        st.session_state.audit_log = st.session_state.audit_log[:200]
+    st.session_state.audit_log.insert(0, f"[{ts}] {user} → {text}")
+    if len(st.session_state.audit_log) > 300:
+        st.session_state.audit_log = st.session_state.audit_log[:300]
 
-# ============================================================
-# SECTION 7: AI DYNAMIC ENGINE (Smart Model Picker)
-# ============================================================
-def smart_generate(contents):
-    available_models = []
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-    except Exception as e:
-        raise Exception(f"Cannot fetch models from Google: {e}")
+def generate_pin():
+    existing = set(st.session_state.doctors_db.keys())
+    while True:
+        p = ''.join(random.choices(string.digits, k=4))
+        if p not in existing:
+            return p
 
-    if not available_models:
-        raise Exception("Google returned NO available models for this API key.")
-
-    def sort_key(n):
-        if '1.5-flash' in n and '8b' not in n: return 1
-        if '1.5-flash-8b' in n:                return 2
-        if '2.0-flash' in n:                   return 3
-        if '1.5-pro' in n:                     return 4
-        if 'gemini-pro' in n:                  return 5
-        return 99
-
-    available_models.sort(key=sort_key)
-    errors = []
-    for m_name in available_models:
-        try:
-            model  = genai.GenerativeModel(m_name)
-            result = model.generate_content(contents)
-            if result and result.text:
-                return result.text.replace('**', '').replace('##', '').replace('###', '')
-        except Exception as e:
-            errors.append(f"[{m_name}]: {str(e)}")
-            continue
-    raise Exception("All AI engines failed:\n" + "\n".join(errors))
-
-def optimize_image(uploaded_file):
-    img = Image.open(uploaded_file)
+def optimize_image(f):
+    if not PIL_AVAILABLE:
+        return f
+    img = Image.open(f)
     if img.mode != 'RGB':
         img = img.convert('RGB')
     img.thumbnail((1200, 1200))
     return img
 
-# ============================================================
-# SECTION 8: CLOUD SYNC (Google Sheets)
-# ============================================================
+def smart_generate(contents):
+    if not GENAI_AVAILABLE:
+        raise Exception("google-generativeai library not installed.")
+    if not is_engine_ready:
+        raise Exception("API Key not configured. Add GEMINI_API_KEY in Streamlit Secrets.")
+
+    models_priority = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+        "gemini-1.5-pro",
+        "gemini-2.0-flash",
+        "gemini-pro",
+    ]
+
+    errors = []
+    for m_name in models_priority:
+        try:
+            model  = genai.GenerativeModel(m_name)
+            result = model.generate_content(contents)
+            if result and result.text:
+                return result.text.replace('**','').replace('##','').replace('###','').replace('#','')
+        except Exception as e:
+            errors.append(f"{m_name}: {str(e)}")
+            continue
+
+    # Try dynamic list as fallback
+    try:
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                try:
+                    model  = genai.GenerativeModel(m.name)
+                    result = model.generate_content(contents)
+                    if result and result.text:
+                        return result.text.replace('**','').replace('##','').replace('###','')
+                except Exception as e:
+                    errors.append(f"{m.name}: {str(e)}")
+    except Exception as e:
+        errors.append(f"list_models: {str(e)}")
+
+    raise Exception("All AI models failed:\n" + "\n".join(errors))
+
 def sync_from_cloud():
     if not WEBHOOK_URL.startswith("http"):
         return
@@ -146,1312 +154,862 @@ def sync_from_cloud():
             cloud_data = res.json()
             new_db = {}
             for row in cloud_data:
-                p_name = row.get("patient_name", "").strip()
-                if not p_name:
-                    continue
-                status = row.get("status", "Active")
-                if p_name not in new_db:
-                    new_db[p_name] = {"status": status, "history": [], "bed": row.get("bed", "Unassigned")}
+                p = row.get("patient_name","").strip()
+                if not p: continue
+                status = row.get("status","Active")
+                if p not in new_db:
+                    new_db[p] = {"status": status, "history": [], "bed": "Unassigned"}
                 if status == "Discharged":
-                    new_db[p_name]["status"] = "Discharged"
-                new_db[p_name]["history"].append({
+                    new_db[p]["status"] = "Discharged"
+                new_db[p]["history"].append({
                     "date":      row.get("date", str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))),
-                    "doctor":    row.get("doctor", "Unknown"),
-                    "raw_notes": row.get("raw_notes", ""),
-                    "summary":   row.get("summary", ""),
+                    "doctor":    row.get("doctor","Unknown"),
+                    "raw_notes": row.get("raw_notes",""),
+                    "summary":   row.get("summary",""),
                 })
             st.session_state.patients_db = new_db
     except Exception:
         pass
 
 def push_to_cloud(payload):
-    if not WEBHOOK_URL.startswith("http"):
-        return False
+    if not WEBHOOK_URL.startswith("http"): return
     try:
         requests.post(WEBHOOK_URL, json=payload, timeout=10)
-        return True
     except Exception:
-        return False
+        pass
 
-# ============================================================
-# SECTION 9: PDF GENERATOR (True Clinical PDF)
-# ============================================================
 def generate_pdf(title, patient_name, text_content, doctor_name=""):
+    if not FPDF_AVAILABLE:
+        return None
     pdf = FPDF()
     pdf.add_page()
-    # Header
     pdf.set_fill_color(10, 50, 100)
-    pdf.rect(0, 0, 210, 25, 'F')
+    pdf.rect(0, 0, 210, 22, 'F')
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 8, txt="DR. GILL'S CARDIAC & CRITICAL CARE ICU", ln=True, align='C')
-    pdf.set_font("Arial", size=10)
-    pdf.cell(0, 7, txt="Kerala | AI Clinical Decision Support System v2.0", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 13)
+    pdf.cell(0, 8,  txt="DR. GILL'S CARDIAC & CRITICAL CARE ICU — KERALA", ln=True, align='C')
+    pdf.set_font("Arial", size=9)
+    pdf.cell(0, 7,  txt="AI Clinical Decision Support System v2.0", ln=True, align='C')
     pdf.set_text_color(0, 0, 0)
-    pdf.ln(5)
-    # Document title
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, txt=title.upper(), ln=True, align='C')
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
-    # Patient info block
-    pdf.set_font("Arial", 'B', 10)
+    pdf.set_font("Arial", 'B', 13)
+    pdf.cell(0, 9,  txt=title.upper(), ln=True, align='C')
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+    pdf.set_font("Arial", 'B', 9)
     pdf.set_fill_color(230, 240, 255)
-    pdf.cell(0, 8, f"  Patient: {patient_name}", ln=True, fill=True)
-    pdf.cell(0, 8, f"  HOD: Dr. Alok Sehgal (Sr. Interventional Cardiologist)  |  Duty Dr: {doctor_name}", ln=True, fill=True)
-    pdf.cell(0, 8, f"  Generated: {datetime.datetime.now().strftime('%d %b %Y, %I:%M %p')}", ln=True, fill=True)
-    pdf.ln(5)
-    # Content
+    pdf.cell(0, 7, f"  Patient: {patient_name}", ln=True, fill=True)
+    pdf.cell(0, 7, f"  HOD: Dr. Alok Sehgal (Sr. Interventional Cardiologist)  |  Doctor: {doctor_name}", ln=True, fill=True)
+    pdf.cell(0, 7, f"  Generated: {datetime.datetime.now().strftime('%d %b %Y, %I:%M %p')}", ln=True, fill=True)
+    pdf.ln(4)
     pdf.set_font("Arial", size=10)
-    clean = text_content.replace('**', '').replace('*', '-').replace('#', '')
-    clean = clean.encode('latin-1', 'replace').decode('latin-1')
+    clean = text_content.replace('**','').replace('*','-').replace('#','')
+    clean = clean.encode('latin-1','replace').decode('latin-1')
     pdf.multi_cell(0, 6, txt=clean)
-    # Footer
-    pdf.set_y(-20)
-    pdf.set_font("Arial", 'I', 8)
-    pdf.set_text_color(100, 100, 100)
+    pdf.set_y(-18)
+    pdf.set_font("Arial",'I',7)
+    pdf.set_text_color(120,120,120)
     pdf.cell(0, 5, "CONFIDENTIAL — FOR CLINICAL USE ONLY | Dr. Gill's ICU App v2.0 | Kerala", align='C')
+    tmpdir  = tempfile.mkdtemp()
+    fpath   = os.path.join(tmpdir, f"{patient_name}_{title.replace(' ','_')[:30]}.pdf")
+    pdf.output(fpath)
+    return fpath
 
-    temp_dir  = tempfile.mkdtemp()
-    filepath  = os.path.join(temp_dir, f"{patient_name}_{title.replace(' ', '_')}.pdf")
-    pdf.output(filepath)
-    return filepath
-
-# ============================================================
-# SECTION 10: NEWS2 SCORE CALCULATOR
-# ============================================================
-def calc_news2(rr, spo2, supp_o2, sbp, hr, temp, avpu, hypercapnic=False):
-    score = 0
-    # Respiratory Rate
-    if rr <= 8 or rr >= 25:   score += 3
-    elif rr in range(9, 12):  score += 1
-    elif rr in range(21, 25): score += 2
-    # SpO2 Scale 1 (normal patients)
-    if not hypercapnic:
-        if spo2 <= 91:          score += 3
-        elif spo2 in range(92, 94): score += 2
-        elif spo2 in range(94, 96): score += 1
-    # Supplemental O2
-    if supp_o2:
-        score += 2
-    # Systolic BP
-    if sbp <= 90 or sbp >= 220:   score += 3
-    elif sbp in range(91, 101):   score += 2
-    elif sbp in range(101, 111):  score += 1
-    # Heart Rate
-    if hr <= 40 or hr >= 131:  score += 3
-    elif hr in range(41, 51) or hr in range(111, 131): score += 2
-    elif hr in range(91, 111): score += 1
-    # Temperature
-    if temp <= 35.0:        score += 3
-    elif temp <= 36.0:      score += 1
-    elif temp >= 39.1:      score += 2
-    elif temp >= 38.1:      score += 1
-    # AVPU
-    avpu_scores = {"Alert": 0, "Confusion/New": 3, "Voice": 3, "Pain": 3, "Unresponsive": 3}
-    score += avpu_scores.get(avpu, 0)
-
-    if score >= 7:   risk, color, action = "HIGH", "🔴", "IMMEDIATE senior review / transfer to Level 3 care"
-    elif score >= 5: risk, color, action = "MEDIUM-HIGH", "🟠", "Urgent senior review within 30 minutes"
-    elif score >= 3: risk, color, action = "MEDIUM", "🟡", "Increased monitoring, review within 1 hour"
-    else:            risk, color, action = "LOW", "🟢", "Continue routine monitoring"
-    return score, risk, color, action
+def calc_news2(rr, spo2, supp_o2, sbp, hr, temp, avpu):
+    s = 0
+    if rr <= 8 or rr >= 25: s += 3
+    elif 9  <= rr <= 11:    s += 1
+    elif 21 <= rr <= 24:    s += 2
+    if spo2 <= 91:          s += 3
+    elif 92 <= spo2 <= 93:  s += 2
+    elif 94 <= spo2 <= 95:  s += 1
+    if supp_o2:             s += 2
+    if sbp <= 90 or sbp >= 220: s += 3
+    elif 91  <= sbp <= 100: s += 2
+    elif 101 <= sbp <= 110: s += 1
+    if hr <= 40 or hr >= 131:   s += 3
+    elif 41 <= hr <= 50 or 111 <= hr <= 130: s += 2
+    elif 91 <= hr <= 110:   s += 1
+    if temp <= 35.0:        s += 3
+    elif temp <= 36.0:      s += 1
+    elif temp >= 39.1:      s += 2
+    elif temp >= 38.1:      s += 1
+    avpu_map = {"Alert":0,"Confusion/New":3,"Voice":3,"Pain":3,"Unresponsive":3}
+    s += avpu_map.get(avpu, 0)
+    if s >= 7:   return s, "HIGH",        "🔴", "IMMEDIATE senior review — consider ICU Level 3"
+    elif s >= 5: return s, "MEDIUM-HIGH", "🟠", "Urgent review within 30 minutes"
+    elif s >= 3: return s, "MEDIUM",      "🟡", "Increase monitoring, review within 1 hour"
+    else:        return s, "LOW",         "🟢", "Continue routine monitoring"
 
 # ============================================================
-# SECTION 11: PIN GENERATOR FOR ADMIN
-# ============================================================
-def generate_pin(length=4):
-    return ''.join(random.choices(string.digits, k=length))
-
-# ============================================================
-# SECTION 12: LOGIN SCREEN
+# LOGIN SCREEN
 # ============================================================
 if not st.session_state.logged_in:
-    # Sync on first load
     sync_from_cloud()
-
-    # Beautiful login screen
-    st.markdown("""
-    <style>
-    .login-box { background: linear-gradient(135deg, #0a1628 0%, #1a3a6e 100%);
-                 padding: 40px; border-radius: 16px; text-align: center; color: white; }
-    .login-title { font-size: 28px; font-weight: bold; margin-bottom: 5px; }
-    .login-sub   { font-size: 14px; color: #a0b8d8; margin-bottom: 25px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
+    c1, c2, c3 = st.columns([1,2,1])
+    with c2:
         st.markdown("""
-        <div class="login-box">
-          <div class="login-title">🏥 Dr. Gill's Cardiac ICU Command System</div>
-          <div class="login-sub">Kerala Cardiac ICU · AI-Powered Clinical Decision Support · v2.0</div>
+        <div style='background:linear-gradient(135deg,#0a1628,#1a3a6e);
+                    padding:35px;border-radius:16px;text-align:center;color:white;margin-bottom:20px'>
+          <h2 style='margin:0'>🏥 Dr. Gill's Cardiac ICU</h2>
+          <h3 style='margin:5px 0;color:#a0c4e8'>Command System v2.0 — Kerala</h3>
+          <p style='color:#7098c0;margin:0'>AI-Powered Clinical Decision Support</p>
         </div>
         """, unsafe_allow_html=True)
-        st.markdown("---")
+
         pin_input = st.text_input("Enter PIN or Master Password:", type="password", placeholder="4-digit PIN or Master Password")
 
-        if st.button("🔐 Access System", type="primary", use_container_width=True):
-            doctors = st.session_state.doctors_db
+        if st.button("🔐 Login", type="primary", use_container_width=True):
             if pin_input == MASTER_PASSWORD:
                 st.session_state.logged_in    = True
                 st.session_state.current_user = MASTER_NAME
                 st.session_state.is_master    = True
                 log_action("MASTER LOGIN")
                 st.rerun()
-            elif pin_input in doctors:
-                doc = doctors[pin_input]
+            elif pin_input in st.session_state.doctors_db:
+                doc = st.session_state.doctors_db[pin_input]
                 st.session_state.logged_in    = True
                 st.session_state.current_user = f"{doc['name']} ({doc['role']})"
                 st.session_state.is_master    = False
                 log_action("Doctor LOGIN")
                 st.rerun()
             else:
-                st.error("🚨 Invalid PIN or Password. Access Denied.")
-        st.markdown("---")
-        st.caption("🔒 Secure | All data encrypted in transit | For authorized personnel only")
+                st.error("Invalid PIN or Password. Access Denied.")
+        st.caption("🔒 Authorized Personnel Only")
     st.stop()
 
 # ============================================================
-# SECTION 13: MAIN APP HEADER
+# HEADER
 # ============================================================
-col_h1, col_h2, col_h3 = st.columns([5, 4, 1])
-with col_h1:
-    master_badge = " 👑 MASTER ADMIN" if st.session_state.is_master else ""
-    st.markdown(f"### 🏥 Dr. Gill's Cardiac ICU Command System v2.0{master_badge}")
-with col_h2:
+h1, h2, h3 = st.columns([5,4,1])
+with h1:
+    badge = " 👑 MASTER ADMIN" if st.session_state.is_master else ""
+    st.markdown(f"### 🏥 Dr. Gill's Cardiac ICU v2.0{badge}")
+with h2:
     st.markdown(f"**HOD:** Dr. Alok Sehgal *(Sr. Interventional Cardiologist)*")
-    st.markdown(f"**Active User:** `{st.session_state.current_user}`  |  **Time:** {datetime.datetime.now().strftime('%d %b %Y, %I:%M %p')}")
-with col_h3:
+    st.markdown(f"**User:** `{st.session_state.current_user}` | {datetime.datetime.now().strftime('%d %b %Y, %I:%M %p')}")
+with h3:
     if st.button("🚪 Logout"):
-        log_action("Logout")
-        for key in ["logged_in", "current_user", "is_master"]:
-            st.session_state[key] = False if key == "logged_in" else (False if key == "is_master" else None)
+        st.session_state.logged_in    = False
+        st.session_state.current_user = None
+        st.session_state.is_master    = False
         st.rerun()
 st.markdown("---")
 
+if not is_engine_ready:
+    st.warning("⚠️ AI Engine not active. Add GEMINI_API_KEY in Streamlit → Settings → Secrets.")
+
 # ============================================================
-# SECTION 14: BUILD TABS (Master gets extra Admin tab)
+# TABS
 # ============================================================
 if st.session_state.is_master:
-    tab_list = [
-        "👑 MASTER CONTROL",
-        "🏥 ICU Bed Board",
-        "🩺 ICU Frontline",
-        "📊 HOD Dashboard",
-        "📉 Flowsheet & Trends",
-        "🚨 Early Warning",
-        "💊 Medication Safety",
-        "🔄 Shift Handover",
-        "🔬 Academic Vault"
-    ]
+    tab_names = ["👑 Master Control","🏥 Bed Board","🩺 ICU Frontline","📊 HOD Dashboard","📉 Flowsheet","🚨 Early Warning","💊 Medications","🔄 Handover","🔬 Academic"]
 else:
-    tab_list = [
-        "🏥 ICU Bed Board",
-        "🩺 ICU Frontline",
-        "📊 HOD Dashboard",
-        "📉 Flowsheet & Trends",
-        "🚨 Early Warning",
-        "💊 Medication Safety",
-        "🔄 Shift Handover",
-        "🔬 Academic Vault"
-    ]
+    tab_names = ["🏥 Bed Board","🩺 ICU Frontline","📊 HOD Dashboard","📉 Flowsheet","🚨 Early Warning","💊 Medications","🔄 Handover","🔬 Academic"]
 
-tabs = st.tabs(tab_list)
+tabs = st.tabs(tab_names)
 
-# Helper to get tab by name
-def get_tab(name):
-    idx = tab_list.index(name)
-    return tabs[idx]
+def T(name):
+    return tabs[tab_names.index(name)]
 
 # ============================================================
-# ============================================================
-#   TAB: 👑 MASTER CONTROL PANEL (YOU ONLY)
-# ============================================================
+# TAB: MASTER CONTROL
 # ============================================================
 if st.session_state.is_master:
-    with get_tab("👑 MASTER CONTROL"):
+    with T("👑 Master Control"):
         st.markdown("""
-        <div style="background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);padding:20px;border-radius:12px;color:white;margin-bottom:20px">
-          <h2 style="margin:0">👑 MASTER CONTROL PANEL — Dr. G.S. Gill</h2>
-          <p style="margin:5px 0 0 0;color:#aaa">God-mode access · Only YOU can see this panel</p>
+        <div style='background:linear-gradient(135deg,#1a1a2e,#0f3460);
+                    padding:20px;border-radius:12px;color:white;margin-bottom:20px'>
+          <h2 style='margin:0'>👑 Master Control Panel — Dr. G.S. Gill</h2>
+          <p style='color:#aaa;margin:5px 0 0'>God-mode access — Only YOU can see this tab</p>
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown("#### 🔐 YOUR MASTER PASSWORD (Keep Secret!)")
-        st.code(f"MASTER PASSWORD: {MASTER_PASSWORD}", language=None)
-        st.caption("Write this down in a safe place. Use this to login and access this Master Control Panel.")
-
+        st.success(f"🔐 YOUR MASTER PASSWORD:  **GILL@ICU#2025**  — Keep this secret!")
         st.markdown("---")
 
-        # ---- DOCTOR MANAGEMENT ----
-        st.markdown("### 👨‍⚕️ Doctor & Resident Management")
-        st.caption("Add doctors/residents, generate their PINs, remove them anytime.")
-
-        # Display current doctors
+        # Doctor management
+        st.subheader("👨‍⚕️ Doctor & Resident Management")
         docs = st.session_state.doctors_db
-        doc_data = []
-        for pin, info in docs.items():
-            doc_data.append({"PIN": pin, "Name": info['name'], "Role": info['role'], "Access Level": info['access']})
-        if doc_data:
-            df_docs = pd.DataFrame(doc_data)
-            st.dataframe(df_docs, use_container_width=True, hide_index=True)
+        rows = [{"PIN": k, "Name": v['name'], "Role": v['role'], "Access": v['access']} for k,v in docs.items()]
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-        st.markdown("#### ➕ Add New Doctor / Resident")
-        col_d1, col_d2, col_d3, col_d4 = st.columns(4)
-        with col_d1:
-            new_doc_name = st.text_input("Full Name:", placeholder="Dr. Firstname Lastname")
-        with col_d2:
-            new_doc_role = st.selectbox("Role:", ["Resident", "Senior Resident", "Registrar", "Consultant", "Visiting Consultant", "HOD"])
-        with col_d3:
-            new_doc_access = st.selectbox("Access Level:", ["Resident", "Senior", "HOD"])
-        with col_d4:
-            custom_pin = st.text_input("Custom PIN (leave blank for auto):", max_chars=6, placeholder="e.g. 5678")
+        st.markdown("#### ➕ Add New Doctor")
+        d1,d2,d3,d4 = st.columns(4)
+        with d1: new_name   = st.text_input("Full Name:", placeholder="Dr. First Last")
+        with d2: new_role   = st.selectbox("Role:", ["Resident","Senior Resident","Registrar","Consultant","HOD"])
+        with d3: new_access = st.selectbox("Access:", ["Resident","Senior","HOD"])
+        with d4: cust_pin   = st.text_input("Custom PIN (or blank for auto):", max_chars=6)
 
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("✅ Add Doctor to System", type="primary", use_container_width=True):
-                if not new_doc_name.strip():
-                    st.warning("Please enter the doctor's name.")
-                else:
-                    assigned_pin = custom_pin.strip() if custom_pin.strip() else generate_pin(4)
-                    while assigned_pin in st.session_state.doctors_db:
-                        assigned_pin = generate_pin(4)
-                    st.session_state.doctors_db[assigned_pin] = {
-                        "name": new_doc_name.strip(),
-                        "role": new_doc_role,
-                        "access": new_doc_access
-                    }
-                    log_action(f"Added doctor: {new_doc_name} with PIN {assigned_pin}")
-                    st.success(f"✅ {new_doc_name} added successfully!")
-                    st.info(f"🔑 Their PIN is: **{assigned_pin}**  — Share this privately with them.")
-                    st.rerun()
-
-        st.markdown("#### ❌ Remove a Doctor")
-        pins_to_show = {f"{v['name']} ({k})": k for k, v in docs.items()}
-        to_remove = st.selectbox("Select Doctor to Remove:", ["---"] + list(pins_to_show.keys()))
-        with col_btn2:
-            if st.button("🗑️ Remove Selected Doctor", use_container_width=True):
-                if to_remove != "---":
-                    pin_r = pins_to_show[to_remove]
-                    name_r = docs[pin_r]['name']
-                    del st.session_state.doctors_db[pin_r]
-                    log_action(f"Removed doctor: {name_r}")
-                    st.success(f"Removed {name_r} from the system.")
-                    st.rerun()
-
-        st.markdown("---")
-
-        # ---- SYSTEM OVERVIEW ----
-        st.markdown("### 📊 System Overview & Statistics")
-        total_pts   = len(st.session_state.patients_db)
-        active_pts  = sum(1 for d in st.session_state.patients_db.values() if d.get("status") == "Active")
-        discharged  = total_pts - active_pts
-        total_docs  = len(st.session_state.doctors_db)
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Patients Ever", total_pts)
-        m2.metric("Currently Active",    active_pts, delta="In ICU")
-        m3.metric("Discharged",          discharged)
-        m4.metric("Registered Doctors",  total_docs)
-
-        st.markdown("---")
-
-        # ---- AUDIT LOG ----
-        st.markdown("### 📋 Full Audit Trail (Every Action Logged)")
-        if st.session_state.audit_log:
-            for entry in st.session_state.audit_log[:50]:
-                st.text(entry)
-        else:
-            st.info("No audit entries yet.")
-
-        st.markdown("---")
-
-        # ---- DATA MANAGEMENT ----
-        st.markdown("### 🗄️ Data Management")
-        col_dm1, col_dm2 = st.columns(2)
-        with col_dm1:
-            if st.button("🔄 Force Sync from Google Sheets", use_container_width=True):
-                sync_from_cloud()
-                log_action("Force synced from cloud")
-                st.success("Synced!")
-        with col_dm2:
-            if st.button("🧹 Clear All Session Data (Careful!)", use_container_width=True):
-                st.session_state.patients_db = {}
-                log_action("Cleared all session patient data")
-                st.warning("Session data cleared. Will re-sync from cloud on next load.")
-
-# ============================================================
-#   TAB: 🏥 ICU BED BOARD (Live Overview)
-# ============================================================
-with get_tab("🏥 ICU Bed Board"):
-    st.header("🏥 Live ICU Bed Board — Kerala Cardiac ICU")
-    st.caption("Real-time overview of all 12 ICU beds. Update bed assignments below.")
-
-    active_patients = [name for name, d in st.session_state.patients_db.items() if d.get("status") == "Active"]
-
-    # Bed grid display
-    st.markdown("#### 🛏️ Bed Status Overview")
-    bed_cols = st.columns(4)
-    beds = st.session_state.icu_beds
-
-    for i, (bed, patient) in enumerate(beds.items()):
-        with bed_cols[i % 4]:
-            if patient == "Empty":
-                color = "#2d5a27"
-                emoji = "🟢"
+        if st.button("✅ Add Doctor", type="primary"):
+            if not new_name.strip():
+                st.warning("Enter doctor name.")
             else:
-                color = "#8b1a1a"
-                emoji = "🔴"
-            st.markdown(f"""
-            <div style="background:{color};padding:10px;border-radius:8px;text-align:center;margin:4px;color:white">
-              <b>{emoji} {bed}</b><br>
-              <small>{patient}</small>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.markdown("---")
-    st.markdown("#### 🔄 Update Bed Assignments")
-    col_b1, col_b2, col_b3 = st.columns(3)
-    with col_b1:
-        selected_bed = st.selectbox("Select Bed:", list(beds.keys()))
-    with col_b2:
-        bed_action = st.radio("Action:", ["Assign Patient", "Mark Empty"], horizontal=True)
-    with col_b3:
-        if bed_action == "Assign Patient":
-            bed_patient = st.selectbox("Assign Patient:", ["---"] + active_patients)
-            if st.button("✅ Assign Bed"):
-                if bed_patient != "---":
-                    st.session_state.icu_beds[selected_bed] = bed_patient
-                    log_action(f"Assigned {bed_patient} to {selected_bed}")
-                    st.rerun()
-        else:
-            if st.button("✅ Mark as Empty"):
-                st.session_state.icu_beds[selected_bed] = "Empty"
-                log_action(f"Marked {selected_bed} as Empty")
+                pin = cust_pin.strip() if cust_pin.strip() else generate_pin()
+                while pin in st.session_state.doctors_db:
+                    pin = generate_pin()
+                st.session_state.doctors_db[pin] = {"name":new_name.strip(),"role":new_role,"access":new_access}
+                log_action(f"Added doctor: {new_name} PIN:{pin}")
+                st.success(f"✅ {new_name} added!")
+                st.info(f"🔑 Their PIN is: **{pin}** — Share this privately via WhatsApp.")
                 st.rerun()
 
+        st.markdown("#### ❌ Remove Doctor")
+        pin_map = {f"{v['name']} (PIN: {k})": k for k,v in docs.items()}
+        to_del  = st.selectbox("Select to remove:", ["---"] + list(pin_map.keys()))
+        if st.button("🗑️ Remove"):
+            if to_del != "---":
+                pk = pin_map[to_del]
+                nm = docs[pk]['name']
+                del st.session_state.doctors_db[pk]
+                log_action(f"Removed: {nm}")
+                st.success(f"Removed {nm}.")
+                st.rerun()
+
+        st.markdown("---")
+        st.subheader("📊 System Stats")
+        total   = len(st.session_state.patients_db)
+        active  = sum(1 for d in st.session_state.patients_db.values() if d.get("status")=="Active")
+        m1,m2,m3,m4 = st.columns(4)
+        m1.metric("Total Patients", total)
+        m2.metric("Active in ICU", active)
+        m3.metric("Discharged", total-active)
+        m4.metric("Registered Doctors", len(docs))
+
+        st.markdown("---")
+        st.subheader("📋 Audit Trail")
+        for e in st.session_state.audit_log[:50]:
+            st.text(e)
+
+        if st.button("🔄 Sync from Cloud"):
+            sync_from_cloud()
+            st.success("Synced!")
+
+# ============================================================
+# TAB: BED BOARD
+# ============================================================
+with T("🏥 Bed Board"):
+    st.header("🏥 ICU Bed Board — Kerala Cardiac ICU (12 Beds)")
+    beds = st.session_state.icu_beds
+    cols = st.columns(4)
+    for i,(bed,pat) in enumerate(beds.items()):
+        with cols[i%4]:
+            color = "#1e4d1e" if pat=="Empty" else "#6b1a1a"
+            emoji = "🟢 EMPTY" if pat=="Empty" else f"🔴 {pat}"
+            st.markdown(f"""
+            <div style='background:{color};padding:12px;border-radius:8px;
+                        text-align:center;color:white;margin:4px'>
+              <b>{bed}</b><br><small>{emoji}</small>
+            </div>""", unsafe_allow_html=True)
+
     st.markdown("---")
-    # Quick stats
-    occupied = sum(1 for v in beds.values() if v != "Empty")
-    st.markdown(f"**ICU Occupancy:** {occupied}/12 beds occupied &nbsp;&nbsp; | &nbsp;&nbsp; **Available:** {12 - occupied} beds free")
+    active_pts = [n for n,d in st.session_state.patients_db.items() if d.get("status")=="Active"]
+    b1,b2,b3 = st.columns(3)
+    with b1: sel_bed    = st.selectbox("Bed:", list(beds.keys()))
+    with b2: bed_action = st.radio("Action:", ["Assign Patient","Mark Empty"], horizontal=True)
+    with b3:
+        if bed_action=="Assign Patient":
+            bed_pt = st.selectbox("Patient:", ["---"]+active_pts)
+            if st.button("✅ Assign"):
+                if bed_pt!="---":
+                    st.session_state.icu_beds[sel_bed] = bed_pt
+                    log_action(f"Bed assigned: {bed_pt} → {sel_bed}")
+                    st.rerun()
+        else:
+            if st.button("✅ Mark Empty"):
+                st.session_state.icu_beds[sel_bed] = "Empty"
+                log_action(f"{sel_bed} marked empty")
+                st.rerun()
+
+    occ = sum(1 for v in beds.values() if v!="Empty")
+    st.info(f"Occupied: {occ}/12 | Available: {12-occ} beds")
 
 # ============================================================
-#   TAB: 🩺 ICU FRONTLINE (Admissions & Progress)
+# TAB: ICU FRONTLINE
 # ============================================================
-with get_tab("🩺 ICU Frontline"):
-    st.header("🩺 ICU Frontline — Admissions & Progress Notes")
+with T("🩺 ICU Frontline"):
+    st.header("🩺 ICU Frontline — Admissions & Analysis")
 
-    col_pt1, col_pt2 = st.columns(2)
-    with col_pt1:
-        patient_type = st.radio("Patient Status:", ["New Admission", "Existing Patient"], horizontal=True)
-    with col_pt2:
-        diagnosis_category = st.selectbox("Primary Diagnosis Category:", [
-            "Acute MI / ACS",
-            "Heart Failure",
-            "Arrhythmia / Dysrhythmia",
-            "Cardiogenic Shock",
-            "Post-PCI / Post-CABG",
-            "Cardiac Tamponade / Pericarditis",
-            "Hypertensive Emergency",
-            "Pulmonary Embolism",
-            "Sepsis / Septic Shock",
-            "Respiratory Failure",
-            "Renal Failure (AKI/CKD)",
-            "Multi-Organ Failure",
-            "Post-Cardiac Arrest",
-            "Other Critical"
-        ])
+    c1,c2 = st.columns(2)
+    with c1: pt_type  = st.radio("Patient:", ["New Admission","Existing Patient"], horizontal=True)
+    with c2: diag_cat = st.selectbox("Diagnosis Category:", [
+        "Acute MI / ACS","Heart Failure","Arrhythmia","Cardiogenic Shock",
+        "Post-PCI / Post-CABG","Hypertensive Emergency","Pulmonary Embolism",
+        "Sepsis / Septic Shock","Respiratory Failure","Renal Failure (AKI)",
+        "Post-Cardiac Arrest","Multi-Organ Failure","Other Critical"])
 
-    if patient_type == "New Admission":
-        p_name = st.text_input("New Patient Full Name:", placeholder="e.g., Rajan Kumar").strip().title()
-        col_na1, col_na2, col_na3 = st.columns(3)
-        with col_na1:
-            age   = st.number_input("Age:", min_value=1, max_value=120, value=55)
-        with col_na2:
-            gender = st.selectbox("Gender:", ["Male", "Female", "Other"])
-        with col_na3:
-            bed_assign = st.selectbox("Assign Bed:", ["Unassigned"] + [b for b, v in st.session_state.icu_beds.items() if v == "Empty"])
+    if pt_type=="New Admission":
+        p_name = st.text_input("Patient Full Name:").strip().title()
+        nc1,nc2,nc3 = st.columns(3)
+        with nc1: age    = st.number_input("Age:", 1, 120, 55)
+        with nc2: gender = st.selectbox("Gender:", ["Male","Female","Other"])
+        with nc3: bed_sel= st.selectbox("Assign Bed:", ["Unassigned"]+[b for b,v in st.session_state.icu_beds.items() if v=="Empty"])
     else:
-        active_pts = [nm for nm, d in st.session_state.patients_db.items() if d.get("status") == "Active"]
-        if not active_pts:
-            st.info("No active patients. Please admit a new patient first.")
-            p_name = ""
-        else:
-            p_name = st.selectbox("Select Existing Patient:", ["---"] + active_pts)
-            if p_name == "---":
-                p_name = ""
+        ap = [n for n,d in st.session_state.patients_db.items() if d.get("status")=="Active"]
+        p_name = st.selectbox("Select Patient:", ["---"]+ap) if ap else ""
+        if p_name=="---": p_name=""
 
+    # Vitals
+    with st.expander("📊 Enter Vitals", expanded=False):
+        v1,v2,v3,v4,v5,v6 = st.columns(6)
+        with v1: vbp  = st.text_input("BP","120/80")
+        with v2: vhr  = st.number_input("HR",0,300,80)
+        with v3: vrr  = st.number_input("RR",0,60,16)
+        with v4: vspo2= st.number_input("SpO2",0,100,98)
+        with v5: vtemp= st.number_input("Temp °C",30.0,43.0,37.0,0.1)
+        with v6: vgcs = st.number_input("GCS",3,15,15)
+        vitals_str = f"BP:{vbp} HR:{vhr} RR:{vrr} SpO2:{vspo2}% Temp:{vtemp}C GCS:{vgcs}"
+
+    notes = st.text_area("Clinical Notes (history, examination, labs, ABG, ECG):", height=160,
+        placeholder="65yr male, DM2/HTN, chest pain 2hrs, STEMI inferior, BP 90/60, HR 120...")
+
+    full_notes = f"Category:{diag_cat} | Vitals:{vitals_str} | Notes:{notes}"
+
+    st.subheader("📸 Upload ECG / X-Ray / Lab Reports")
+    uploads = st.file_uploader("Upload images or PDF:", type=['jpg','jpeg','png','pdf'], accept_multiple_files=True)
+
+    has_input = bool(notes.strip() or uploads)
     st.markdown("---")
-    st.subheader("📝 Clinical Notes & Investigations")
 
-    # Structured vitals entry
-    with st.expander("📊 Enter Vitals (Structured)", expanded=False):
-        vc1, vc2, vc3, vc4, vc5, vc6 = st.columns(6)
-        with vc1: v_bp  = st.text_input("BP (mmHg)", "120/80")
-        with vc2: v_hr  = st.number_input("HR (bpm)", 0, 300, 80)
-        with vc3: v_rr  = st.number_input("RR (/min)", 0, 60, 16)
-        with vc4: v_spo2 = st.number_input("SpO2 (%)", 0, 100, 98)
-        with vc5: v_temp = st.number_input("Temp (°C)", 30.0, 43.0, 37.0, 0.1)
-        with vc6: v_gcs  = st.number_input("GCS", 3, 15, 15)
-        vitals_str = f"BP:{v_bp} HR:{v_hr} RR:{v_rr} SpO2:{v_spo2}% Temp:{v_temp}C GCS:{v_gcs}"
+    b1,b2,b3 = st.columns(3)
+    with b1: do_quick  = st.button("🚨 Quick Analysis",    type="primary",    use_container_width=True)
+    with b2: do_expert = st.button("👑 Expert Board",      type="secondary",  use_container_width=True)
+    with b3: do_sepsis = st.button("🦠 Sepsis Protocol",                      use_container_width=True)
 
-    notes = st.text_area(
-        "Dictate Full Clinical Picture (History, Examination, Labs, ABG, ECG findings):",
-        height=180,
-        placeholder="Example: 65yr male, DM2/HTN, presented with chest pain 2hrs ago, STEMI inferior lead ECG, BP 90/60, HR 110, SpO2 94%..."
-    )
-
-    full_notes = f"Category: {diagnosis_category}\nVitals: {vitals_str}\nClinical Notes: {notes}" if notes else f"Category: {diagnosis_category}\nVitals: {vitals_str}"
-
-    st.subheader("📸 Upload ECG, X-Ray, Echo, ABG, Lab Reports")
-    st.caption("📱 Mobile users: Tap 'Browse files' → select camera for direct photo capture")
-    uploaded_files = st.file_uploader(
-        "Upload Images/PDFs (multiple allowed):",
-        type=['jpg', 'jpeg', 'png', 'pdf'],
-        accept_multiple_files=True,
-        key="frontline_upload"
-    )
-
-    has_input = bool(notes.strip() or uploaded_files)
-
-    st.markdown("---")
-    col_btn1, col_btn2, col_btn3 = st.columns(3)
-    with col_btn1:
-        analyze_quick  = st.button("🚨 Quick Frontline Analysis", type="primary", use_container_width=True)
-    with col_btn2:
-        analyze_expert = st.button("👑 Expert Board Review", type="secondary", use_container_width=True)
-    with col_btn3:
-        analyze_sepsis = st.button("🦠 Sepsis / Shock Protocol", use_container_width=True)
-
-    if analyze_quick or analyze_expert or analyze_sepsis:
+    if do_quick or do_expert or do_sepsis:
         if not is_engine_ready:
-            st.error("AI Engine Offline — Check API Key in Streamlit Secrets.")
+            st.error("AI Engine offline — add GEMINI_API_KEY in Streamlit Secrets.")
         elif not p_name:
-            st.warning("Please enter or select a patient name.")
+            st.warning("Enter patient name.")
         elif not has_input:
-            st.warning("Please provide clinical notes or upload an image.")
+            st.warning("Add clinical notes or upload a report.")
         else:
-            if analyze_quick:
-                analysis_type = "QUICK"
-                prompt = f"""
-                You are a Senior ICU Resident on duty in a Cardiac ICU, Kerala, India.
-                Patient: {p_name} | Diagnosis Category: {diagnosis_category}
-                Clinical Data: {full_notes}
+            if do_quick:
+                atype = "QUICK"
+                prompt = f"""You are a Senior ICU Resident in a Cardiac ICU, Kerala India.
+Patient: {p_name} | {full_notes}
+Give fast structured analysis:
+1. WORKING DIAGNOSIS
+2. CRITICALITY SCORE (1-10, label RED/YELLOW/GREEN)
+3. IMMEDIATE ACTIONS (next 30 minutes)
+4. INVESTIGATIONS TO ORDER
+5. TREATMENT PLAN
+6. DRUG INTERACTIONS CHECK
+7. NURSE INSTRUCTIONS
+Use Indian generic drug names. PLAIN TEXT ONLY. NO ASTERISKS.
+End with: TOPICS: Topic1, Topic2, Topic3"""
 
-                Provide a FAST, STRUCTURED analysis:
-                1. WORKING DIAGNOSIS
-                2. CRITICALITY LEVEL: Score 1-10 with label (RED=8-10 critical, YELLOW=4-7 guarded, GREEN=1-3 stable)
-                3. IMMEDIATE ACTIONS (Next 30 minutes)
-                4. INVESTIGATIONS ORDERED
-                5. INITIAL TREATMENT PLAN
-                6. DRUG-DRUG INTERACTIONS CHECK (flag any dangerous interactions)
-                7. NURSE INSTRUCTIONS
+            elif do_expert:
+                atype = "EXPERT"
+                prompt = f"""You are a Multi-Disciplinary Expert Board (Intensivist, Cardiologist, Nephrologist, Pharmacologist).
+Patient: {p_name} | {full_notes}
+1. CRITICALITY SCORE (1-10, RED/YELLOW/GREEN)
+2. ABG ANALYSIS (step-by-step if ABG data present)
+3. ECG INTERPRETATION (if ECG findings present)
+4. MULTI-SPECIALTY VIEWS (Intensivist / Cardiologist / Nephrologist / Pharmacologist)
+5. MASTER TREATMENT PROTOCOL (drug names, doses, routes, timing)
+6. MONITORING TARGETS
+7. ESCALATION TRIGGERS
+8. FAMILY COUNSELING POINTS
+PLAIN TEXT ONLY. NO ASTERISKS.
+End with: TOPICS: Topic1, Topic2, Topic3"""
 
-                Be concise. Use Indian generic drug names where possible.
-                WRITE IN PLAIN TEXT ONLY. NO ASTERISKS OR HASH SYMBOLS.
-                At the end add exactly: TOPICS: [Topic1], [Topic2], [Topic3]
-                """
+            else:
+                atype = "SEPSIS"
+                prompt = f"""You are a Sepsis Expert in a Cardiac ICU, Kerala India.
+Patient: {p_name} | {full_notes}
+Apply SURVIVING SEPSIS CAMPAIGN 1-HOUR BUNDLE:
+1. qSOFA SCORE & SEPSIS-3 CRITERIA
+2. SHOCK ASSESSMENT (septic/cardiogenic/mixed)
+3. 1-HOUR BUNDLE CHECKLIST
+4. ANTIBIOTIC SELECTION (Kerala resistance patterns)
+5. VASOPRESSOR PROTOCOL (Norepinephrine doses)
+6. SOURCE CONTROL
+7. MONITORING TARGETS (lactate, MAP, urine output)
+PLAIN TEXT ONLY. NO ASTERISKS.
+End with: TOPICS: Topic1, Topic2, Topic3"""
 
-            elif analyze_expert:
-                analysis_type = "EXPERT"
-                prompt = f"""
-                You are a Multi-Disciplinary Expert Board in a Cardiac ICU, Kerala, India:
-                - Senior Intensivist
-                - Interventional Cardiologist
-                - Nephrologist
-                - Clinical Pharmacologist
-                - Pulmonologist (if respiratory issues)
-
-                Patient: {p_name} | Primary Category: {diagnosis_category}
-                Clinical Data: {full_notes}
-
-                Provide a COMPREHENSIVE EXPERT BOARD REVIEW:
-                1. CRITICALITY SCORE: Strict 1-10 (10=imminent death). Label RED/YELLOW/GREEN.
-                2. ABG ANALYSIS: If ABG data present, apply FULL Boston/Stewart method step-by-step.
-                3. ECG INTERPRETATION: If ECG findings present, full systematic interpretation.
-                4. MULTI-SPECIALTY PANEL VIEWS:
-                   - Intensivist View
-                   - Cardiologist View
-                   - Nephrologist View (renal function, fluid balance)
-                   - Pharmacologist View (DDI, dose adjustments for renal/hepatic)
-                5. MASTER TREATMENT PROTOCOL (drug names, doses, routes, timing)
-                6. MONITORING TARGETS (hourly, 4-hourly, daily)
-                7. ESCALATION TRIGGERS (when to call senior/transfer)
-                8. FAMILY COUNSELING POINTS (in simple language)
-
-                WRITE IN PLAIN TEXT ONLY. NO ASTERISKS OR HASH SYMBOLS.
-                At the end add exactly: TOPICS: [Topic1], [Topic2], [Topic3]
-                """
-
-            else:  # Sepsis
-                analysis_type = "SEPSIS"
-                prompt = f"""
-                You are a Sepsis Response Expert in a Cardiac ICU, Kerala, India.
-                Patient: {p_name} | Category: {diagnosis_category}
-                Clinical Data: {full_notes}
-
-                Apply THE SURVIVING SEPSIS CAMPAIGN 1-HOUR BUNDLE:
-                1. SEPSIS SCREENING: Calculate qSOFA score and SOFA score if data available.
-                2. SEPSIS-3 CRITERIA: Does this patient meet Sepsis-3 definition?
-                3. SHOCK ASSESSMENT: Septic shock criteria? Cardiogenic shock? Mixed?
-                4. 1-HOUR BUNDLE CHECKLIST:
-                   - Blood cultures (before antibiotics)?
-                   - Lactate level?
-                   - IV fluid resuscitation (30ml/kg crystalloid)?
-                   - Antibiotic choice (cover, dose, route)?
-                   - Vasopressors if MAP <65?
-                5. ANTIBIOTIC SELECTION: Best empiric regimen for Kerala resistance patterns.
-                6. VASOPRESSOR PROTOCOL: Norepinephrine doses, escalation plan.
-                7. SOURCE CONTROL: Identify and address source.
-                8. MONITORING: Lactate clearance targets, MAP targets, UO targets.
-
-                WRITE IN PLAIN TEXT ONLY. NO ASTERISKS OR HASH SYMBOLS.
-                At the end add exactly: TOPICS: [Topic1], [Topic2], [Topic3]
-                """
-
-            with st.spinner(f"{'Expert Board convening' if analyze_expert else 'AI Radar scanning'}... Please wait."):
+            with st.spinner("AI analyzing case..."):
                 try:
-                    content_to_send = [prompt]
-                    if uploaded_files:
-                        for f in uploaded_files:
-                            if f.name.lower().endswith(('png', 'jpg', 'jpeg')):
-                                content_to_send.append(optimize_image(f))
+                    contents = [prompt]
+                    if uploads:
+                        for f in uploads:
+                            if f.name.lower().endswith(('png','jpg','jpeg')) and PIL_AVAILABLE:
+                                contents.append(optimize_image(f))
                             elif f.name.lower().endswith('.pdf'):
                                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                                     tmp.write(f.read())
-                                    tmp_path = tmp.name
-                                gemini_file = genai.upload_file(path=tmp_path, mime_type='application/pdf')
-                                content_to_send.append(gemini_file)
+                                gemini_f = genai.upload_file(path=tmp.name, mime_type='application/pdf')
+                                contents.append(gemini_f)
 
-                    res_text   = smart_generate(content_to_send)
-                    topics_list = []
-                    if "TOPICS:" in res_text:
-                        parts      = res_text.split("TOPICS:")
-                        res_text   = parts[0].strip()
-                        topics_raw = parts[1].strip()
-                        topics_list = [t.strip().strip('[]') for t in topics_raw.split(",")]
-                        st.session_state[f"topics_{p_name}"] = topics_list
+                    result = smart_generate(contents)
+                    topics = []
+                    if "TOPICS:" in result:
+                        parts  = result.split("TOPICS:")
+                        result = parts[0].strip()
+                        topics = [t.strip() for t in parts[1].split(",")]
+                        st.session_state[f"topics_{p_name}"] = topics
 
-                    # Save to DB
-                    current_time = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+                    now = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
                     if p_name not in st.session_state.patients_db:
-                        st.session_state.patients_db[p_name] = {"status": "Active", "history": [], "bed": "Unassigned"}
-                        if patient_type == "New Admission" and bed_assign != "Unassigned":
-                            st.session_state.patients_db[p_name]["bed"] = bed_assign
-                            st.session_state.icu_beds[bed_assign] = p_name
+                        st.session_state.patients_db[p_name] = {"status":"Active","history":[],"bed":"Unassigned"}
+                        if pt_type=="New Admission" and bed_sel!="Unassigned":
+                            st.session_state.patients_db[p_name]["bed"] = bed_sel
+                            st.session_state.icu_beds[bed_sel] = p_name
 
-                    entry = {
-                        "date":      current_time,
-                        "doctor":    st.session_state.current_user,
-                        "raw_notes": full_notes[:2000],
-                        "summary":   res_text,
-                        "type":      analysis_type
-                    }
-                    st.session_state.patients_db[p_name]["history"].append(entry)
-
-                    # Push to cloud
-                    push_to_cloud({
-                        "action":       "new_entry",
-                        "patient_name": p_name,
-                        "doctor":       st.session_state.current_user,
-                        "raw_notes":    full_notes[:2000],
-                        "summary":      res_text,
-                        "date":         current_time,
-                        "status":       "Active"
+                    st.session_state.patients_db[p_name]["history"].append({
+                        "date":now,"doctor":st.session_state.current_user,
+                        "raw_notes":full_notes[:2000],"summary":result,"type":atype
                     })
-
-                    log_action(f"{analysis_type} analysis for {p_name}")
-                    st.session_state[f'last_result_{p_name}'] = res_text
-                    st.success(f"✅ Analysis complete & auto-saved for {p_name}!")
-
+                    push_to_cloud({"action":"new_entry","patient_name":p_name,
+                                   "doctor":st.session_state.current_user,"raw_notes":full_notes[:2000],
+                                   "summary":result,"date":now,"status":"Active"})
+                    log_action(f"{atype} analysis: {p_name}")
+                    st.session_state[f"result_{p_name}"] = result
+                    st.success(f"Analysis complete & auto-saved for {p_name}!")
                 except Exception as e:
-                    st.error(f"AI Engine Error:\n{str(e)}")
+                    st.error(f"AI Error: {str(e)}")
 
-    # Display last result
-    key_res = f'last_result_{p_name}' if p_name else None
-    if key_res and key_res in st.session_state:
+    rkey = f"result_{p_name}" if p_name else None
+    if rkey and rkey in st.session_state:
         st.markdown("---")
-        st.subheader("📋 AI Analysis Result")
-        st.info(st.session_state[key_res])
+        st.subheader("📋 AI Analysis")
+        st.info(st.session_state[rkey])
 
-        col_dl1, col_dl2 = st.columns(2)
-        with col_dl1:
-            if st.button("📄 Generate & Download PDF Report"):
-                try:
-                    pdf_path = generate_pdf(
-                        "CLINICAL ANALYSIS REPORT",
-                        p_name,
-                        st.session_state[key_res],
-                        st.session_state.current_user
-                    )
-                    with open(pdf_path, "rb") as f:
-                        st.download_button(
-                            "📥 Download PDF",
-                            data=f,
-                            file_name=f"{p_name}_Report_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                            mime="application/pdf"
-                        )
-                except Exception as e:
-                    st.error(f"PDF Error: {e}")
+        if FPDF_AVAILABLE and st.button("📄 Download PDF Report"):
+            path = generate_pdf("CLINICAL ANALYSIS", p_name, st.session_state[rkey], st.session_state.current_user)
+            if path:
+                with open(path,"rb") as f:
+                    st.download_button("📥 Download", data=f,
+                        file_name=f"{p_name}_Report_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf")
 
-        # Guideline section
         st.markdown("---")
-        st.subheader("📚 AI-Suggested Learning Topics")
+        st.subheader("📚 AI-Suggested Topics")
         auto_topics = st.session_state.get(f"topics_{p_name}", [])
-        if auto_topics:
-            sel_topic = st.selectbox("Study this case-related topic:", ["Choose..."] + auto_topics)
-        else:
-            sel_topic = "Choose..."
-        custom_topic = st.text_input("Or enter your own topic:")
-        final_topic  = custom_topic if custom_topic else (sel_topic if sel_topic != "Choose..." else "")
-
+        sel_topic   = st.selectbox("Study:", ["Choose..."]+auto_topics) if auto_topics else None
+        cust_topic  = st.text_input("Or type your own topic:")
+        final_topic = cust_topic if cust_topic else (sel_topic if sel_topic and sel_topic!="Choose..." else "")
         if final_topic and st.button("📖 Generate Guideline PDF"):
-            with st.spinner(f"Fetching ICU guidelines for: {final_topic}..."):
+            with st.spinner("Generating guideline..."):
                 try:
-                    guide_prompt = f"""
-                    Write a comprehensive ICU clinical guideline on: {final_topic}
-                    Include: Definition, Diagnosis criteria, Management protocol, Drug doses, Monitoring parameters, and Complications.
-                    Use Indian generic drug names. Reference international guidelines (AHA, ESC, SCCM) where applicable.
-                    PLAIN TEXT ONLY. NO ASTERISKS OR HASH SYMBOLS.
-                    """
-                    guide_text = smart_generate([guide_prompt])
-                    pdf_path   = generate_pdf(f"GUIDELINE: {final_topic.upper()}", "Academic Reference", guide_text, st.session_state.current_user)
-                    with open(pdf_path, "rb") as f:
-                        st.download_button(
-                            "📥 Download Guideline PDF",
-                            data=f,
-                            file_name=f"Guideline_{final_topic.replace(' ', '_')}.pdf",
-                            mime="application/pdf"
-                        )
+                    gp = f"""Write a comprehensive ICU clinical guideline on: {final_topic}
+Include definition, diagnosis criteria, management protocol, drug doses (Indian generic names),
+monitoring parameters, complications. Reference AHA/ESC/SCCM guidelines.
+PLAIN TEXT ONLY. NO ASTERISKS."""
+                    gt = smart_generate([gp])
+                    gpath = generate_pdf(f"GUIDELINE: {final_topic[:40].upper()}", "Academic", gt, st.session_state.current_user)
+                    if gpath:
+                        with open(gpath,"rb") as f:
+                            st.download_button("📥 Download Guideline", data=f,
+                                file_name=f"Guideline_{final_topic.replace(' ','_')[:30]}.pdf",
+                                mime="application/pdf")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(str(e))
 
 # ============================================================
-#   TAB: 📊 HOD DASHBOARD (Continuous Thread)
+# TAB: HOD DASHBOARD
 # ============================================================
-with get_tab("📊 HOD Dashboard"):
-    st.header("📊 HOD Dashboard — Complete Patient Files & Clinical Thread")
+with T("📊 HOD Dashboard"):
+    st.header("📊 HOD Dashboard — Patient Files & Clinical Thread")
 
-    col_hod1, col_hod2 = st.columns([3, 1])
-    with col_hod1:
-        view_filter = st.radio("Filter:", ["Active Patients", "Discharged Patients", "All Patients"], horizontal=True)
-    with col_hod2:
-        if st.button("🔄 Refresh from Cloud"):
+    c1,c2 = st.columns([3,1])
+    with c1: vf = st.radio("Show:", ["Active","Discharged","All"], horizontal=True)
+    with c2:
+        if st.button("🔄 Refresh"):
             sync_from_cloud()
             st.rerun()
 
     db = st.session_state.patients_db
-    if view_filter == "Active Patients":
-        filtered = {k: v for k, v in db.items() if v.get("status") == "Active"}
-    elif view_filter == "Discharged Patients":
-        filtered = {k: v for k, v in db.items() if v.get("status") == "Discharged"}
+    filt = {k:v for k,v in db.items() if
+            (vf=="Active" and v.get("status")=="Active") or
+            (vf=="Discharged" and v.get("status")=="Discharged") or
+            vf=="All"}
+
+    if not filt:
+        st.info("No patients found.")
     else:
-        filtered = db
+        for pname, pdata in filt.items():
+            hist   = pdata.get("history",[])
+            latest = hist[-1] if hist else {}
+            badge  = "🔴 ACTIVE" if pdata.get("status")=="Active" else "✅ DISCHARGED"
+            adm    = hist[0].get("date","?") if hist else "?"
 
-    if not filtered:
-        st.info("No patients found for this filter.")
-    else:
-        for pt_name, pt_data in filtered.items():
-            history = pt_data.get("history", [])
-            latest  = history[-1] if history else {}
-            adm_date = history[0].get("date", "Unknown") if history else "Unknown"
-            badge = "🔴 ACTIVE" if pt_data.get("status") == "Active" else "✅ DISCHARGED"
+            with st.expander(f"{badge} | 🛏️ {pname} | Admitted: {adm} | Updates: {len(hist)}"):
+                s1,s2,s3 = st.columns(3)
+                s1.caption(f"Last update: {latest.get('date','?')}")
+                s2.caption(f"Last doctor: {latest.get('doctor','?')}")
+                s3.caption(f"Bed: {pdata.get('bed','?')}")
 
-            header = f"{badge}  |  🛏️ {pt_name}  |  Admitted: {adm_date}  |  Updates: {len(history)}"
-            with st.expander(header, expanded=False):
-                # Summary panel
-                col_s1, col_s2, col_s3 = st.columns(3)
-                with col_s1: st.caption(f"**Last Updated:** {latest.get('date','?')}")
-                with col_s2: st.caption(f"**Last Doctor:** {latest.get('doctor','?')}")
-                with col_s3: st.caption(f"**Bed:** {pt_data.get('bed','Unassigned')}")
+                edited = st.text_area("Master Clinical File (HOD can edit):",
+                    value=latest.get("summary",""), height=200, key=f"edit_{pname}")
 
-                # Current master file
-                st.markdown("**📝 Current Master Clinical File:**")
-                edited_summary = st.text_area(
-                    "HOD can edit this directly:",
-                    value=latest.get("summary", ""),
-                    height=200,
-                    key=f"hod_edit_{pt_name}"
-                )
-
-                if st.button("💾 Save HOD Edits", key=f"save_edit_{pt_name}"):
-                    if history:
-                        st.session_state.patients_db[pt_name]["history"][-1]["summary"] = edited_summary
-                        log_action(f"HOD edited file for {pt_name}")
+                if st.button("💾 Save Edits", key=f"save_{pname}"):
+                    if hist:
+                        st.session_state.patients_db[pname]["history"][-1]["summary"] = edited
+                        log_action(f"HOD edited: {pname}")
                         st.success("Saved!")
 
                 st.markdown("---")
-
-                # ---- THE CLINICAL THREAD ----
-                st.markdown("### 📈 Add Progress Note / New Investigations (Clinical Thread)")
+                st.markdown("### 📈 Add Progress Note (Clinical Thread)")
                 with st.container(border=True):
-                    prog_notes = st.text_area(
-                        "New progress note or findings:",
-                        key=f"prog_{pt_name}",
-                        height=80,
-                        placeholder="Enter new vitals, ABG results, ECG changes, specialist review, response to treatment..."
-                    )
-                    prog_files = st.file_uploader(
-                        "Upload new reports/images:",
-                        type=['jpg', 'jpeg', 'png', 'pdf'],
-                        accept_multiple_files=True,
-                        key=f"prog_files_{pt_name}"
-                    )
-                    has_prog = bool(prog_notes.strip() or prog_files)
+                    pnotes = st.text_area("New progress / findings:", key=f"pn_{pname}", height=70,
+                        placeholder="New vitals, ABG result, ECG change, response to treatment...")
+                    pfiles = st.file_uploader("Upload new reports:", type=['jpg','jpeg','png','pdf'],
+                        accept_multiple_files=True, key=f"pf_{pname}")
 
-                    if st.button("🔄 Analyze Progress & Update Thread", type="primary", key=f"thread_{pt_name}"):
-                        if not has_prog:
-                            st.warning("Add notes or upload a report first.")
+                    if st.button("🔄 Analyze & Update Thread", type="primary", key=f"thread_{pname}"):
+                        if not (pnotes.strip() or pfiles):
+                            st.warning("Add notes or upload a report.")
                         elif not is_engine_ready:
-                            st.error("AI Engine offline.")
+                            st.error("AI offline.")
                         else:
-                            with st.spinner("AI comparing new data with previous trajectory..."):
+                            with st.spinner("AI comparing with previous data..."):
                                 try:
-                                    thread_prompt = f"""
-                                    You are a Senior ICU Registrar updating the clinical thread for patient: {pt_name}.
+                                    tp = f"""You are a Senior ICU Registrar updating the clinical thread for {pname}.
 
-                                    PREVIOUS CLINICAL SUMMARY (from last entry):
-                                    {edited_summary}
+PREVIOUS CLINICAL SUMMARY:
+{edited}
 
-                                    NEW PROGRESS NOTE / NEW REPORTS:
-                                    {prog_notes}
+NEW PROGRESS NOTE:
+{pnotes}
 
-                                    Perform a TRAJECTORY COMPARISON ANALYSIS:
-                                    1. COMPARISON: Compare today's findings with the previous summary. Is the patient IMPROVING, DETERIORATING, or STABLE? Be specific about which parameters changed.
-                                    2. UPDATED CRITICALITY SCORE: 1-10 with RED/YELLOW/GREEN label.
-                                    3. RESPONSE TO TREATMENT: Is the current treatment working? What evidence?
-                                    4. UPDATED TREATMENT ADJUSTMENTS: What needs to change (add/stop/modify drugs, investigations)?
-                                    5. PLAN FOR NEXT 24 HOURS.
-                                    6. WARD ROUND SUMMARY (for HOD round — concise 5-line brief).
+TRAJECTORY COMPARISON:
+1. COMPARISON: Is patient IMPROVING, DETERIORATING, or STABLE? Be specific.
+2. UPDATED CRITICALITY SCORE (1-10, RED/YELLOW/GREEN)
+3. RESPONSE TO TREATMENT: Is current plan working?
+4. TREATMENT ADJUSTMENTS NEEDED
+5. PLAN FOR NEXT 24 HOURS
+6. WARD ROUND SUMMARY (5 lines for HOD round)
 
-                                    PLAIN TEXT ONLY. NO ASTERISKS OR HASH SYMBOLS.
-                                    """
-                                    content = [thread_prompt]
-                                    if prog_files:
-                                        for f in prog_files:
-                                            if f.name.lower().endswith(('png', 'jpg', 'jpeg')):
-                                                content.append(optimize_image(f))
-                                    update_text = smart_generate(content)
-
-                                    current_time = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
-                                    new_entry = {
-                                        "date":      current_time,
-                                        "doctor":    st.session_state.current_user,
-                                        "raw_notes": prog_notes,
-                                        "summary":   update_text,
-                                        "type":      "PROGRESS"
-                                    }
-                                    st.session_state.patients_db[pt_name]["history"].append(new_entry)
-                                    push_to_cloud({
-                                        "action": "new_entry",
-                                        "patient_name": pt_name,
-                                        "doctor": st.session_state.current_user,
-                                        "raw_notes": prog_notes,
-                                        "summary": update_text,
-                                        "date": current_time,
-                                        "status": "Active"
+PLAIN TEXT ONLY. NO ASTERISKS."""
+                                    tc = [tp]
+                                    if pfiles:
+                                        for f in pfiles:
+                                            if f.name.lower().endswith(('png','jpg','jpeg')) and PIL_AVAILABLE:
+                                                tc.append(optimize_image(f))
+                                    tres = smart_generate(tc)
+                                    now  = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+                                    st.session_state.patients_db[pname]["history"].append({
+                                        "date":now,"doctor":st.session_state.current_user,
+                                        "raw_notes":pnotes,"summary":tres,"type":"PROGRESS"
                                     })
-                                    log_action(f"Progress thread updated for {pt_name}")
+                                    push_to_cloud({"action":"new_entry","patient_name":pname,
+                                        "doctor":st.session_state.current_user,"raw_notes":pnotes,
+                                        "summary":tres,"date":now,"status":"Active"})
+                                    log_action(f"Thread updated: {pname}")
                                     st.success("Thread updated!")
-                                    st.info(update_text)
+                                    st.info(tres)
                                 except Exception as e:
-                                    st.error(f"Error: {e}")
+                                    st.error(str(e))
 
-                st.markdown("---")
-
-                # Full history timeline
-                if st.checkbox(f"📅 Show Full History Timeline for {pt_name}", key=f"timeline_{pt_name}"):
-                    for i, h in enumerate(reversed(history)):
+                if st.checkbox(f"📅 Full History", key=f"hist_{pname}"):
+                    for i,h in enumerate(reversed(hist)):
                         with st.container(border=True):
-                            st.caption(f"**Entry #{len(history)-i}** | {h.get('date','')} | By: {h.get('doctor','')} | Type: {h.get('type','')}")
-                            st.text(h.get("summary", "")[:500] + "..." if len(h.get("summary","")) > 500 else h.get("summary",""))
+                            st.caption(f"Entry #{len(hist)-i} | {h.get('date','')} | {h.get('doctor','')} | {h.get('type','')}")
+                            txt = h.get("summary","")
+                            st.text(txt[:600]+"..." if len(txt)>600 else txt)
 
                 st.markdown("---")
-
-                # Discharge section
-                col_d1, col_d2 = st.columns(2)
-                with col_d1:
-                    if pt_data.get("status") == "Active":
-                        if st.button(f"✅ Generate Discharge Summary for {pt_name}", key=f"disch_{pt_name}"):
-                            with st.spinner("Generating discharge summary..."):
+                if pdata.get("status")=="Active":
+                    dc1,dc2 = st.columns(2)
+                    with dc1:
+                        if st.button(f"📄 Generate Discharge Summary", key=f"ds_{pname}"):
+                            with st.spinner("Generating..."):
                                 try:
-                                    all_summaries = "\n\n---\n\n".join([h.get("summary", "") for h in history[-3:]])
-                                    disch_prompt = f"""
-                                    Generate a FORMAL HOSPITAL DISCHARGE SUMMARY for patient: {pt_name}
-                                    Based on their clinical journey in our Cardiac ICU, Kerala.
-
-                                    Clinical History from ICU Stay:
-                                    {all_summaries}
-
-                                    Include:
-                                    1. ADMISSION DIAGNOSIS
-                                    2. SUMMARY OF ICU STAY
-                                    3. KEY INVESTIGATIONS AND RESULTS
-                                    4. PROCEDURES PERFORMED
-                                    5. DISCHARGE CONDITION
-                                    6. DISCHARGE MEDICATIONS (with doses)
-                                    7. FOLLOW-UP INSTRUCTIONS
-                                    8. RED FLAG SYMPTOMS (when to return to ER)
-                                    9. ACTIVITY RESTRICTIONS
-                                    10. DIET INSTRUCTIONS
-
-                                    Under: Dr. Alok Sehgal (HOD, Sr. Interventional Cardiologist)
-                                    Attending: {st.session_state.current_user}
-                                    PLAIN TEXT ONLY. NO ASTERISKS.
-                                    """
-                                    disch_text = smart_generate([disch_prompt])
-                                    pdf_path   = generate_pdf("DISCHARGE SUMMARY", pt_name, disch_text, st.session_state.current_user)
-                                    with open(pdf_path, "rb") as f:
-                                        st.download_button(
-                                            f"📥 Download Discharge Summary",
-                                            data=f,
-                                            file_name=f"{pt_name}_Discharge_{datetime.datetime.now().strftime('%Y%m%d')}.pdf",
-                                            mime="application/pdf",
-                                            key=f"dl_disch_{pt_name}"
-                                        )
+                                    all_s = "\n\n---\n\n".join([h.get("summary","") for h in hist[-3:]])
+                                    dp = f"""Generate formal HOSPITAL DISCHARGE SUMMARY for {pname}, Cardiac ICU Kerala.
+Clinical journey: {all_s}
+Include: Admission diagnosis, ICU stay summary, investigations, procedures, discharge condition,
+discharge medications with doses, follow-up instructions, red flag symptoms, activity/diet restrictions.
+Under: Dr. Alok Sehgal (HOD). Attending: {st.session_state.current_user}.
+PLAIN TEXT ONLY. NO ASTERISKS."""
+                                    dt   = smart_generate([dp])
+                                    dpth = generate_pdf("DISCHARGE SUMMARY", pname, dt, st.session_state.current_user)
+                                    if dpth:
+                                        with open(dpth,"rb") as f:
+                                            st.download_button("📥 Download Discharge PDF", data=f,
+                                                file_name=f"{pname}_Discharge.pdf", mime="application/pdf",
+                                                key=f"dl_{pname}")
                                 except Exception as e:
-                                    st.error(f"Error: {e}")
-                with col_d2:
-                    if pt_data.get("status") == "Active":
-                        if st.button(f"🚪 Mark {pt_name} as Discharged", key=f"mark_disch_{pt_name}"):
-                            st.session_state.patients_db[pt_name]["status"] = "Discharged"
-                            # Free the bed
-                            for bed, occ in st.session_state.icu_beds.items():
-                                if occ == pt_name:
-                                    st.session_state.icu_beds[bed] = "Empty"
-                            push_to_cloud({"action": "discharge", "patient_name": pt_name, "status": "Discharged", "date": str(datetime.datetime.now())})
-                            log_action(f"Discharged: {pt_name}")
-                            st.success(f"{pt_name} marked as discharged.")
+                                    st.error(str(e))
+                    with dc2:
+                        if st.button(f"🚪 Mark Discharged", key=f"md_{pname}"):
+                            st.session_state.patients_db[pname]["status"] = "Discharged"
+                            for bed,occ in st.session_state.icu_beds.items():
+                                if occ==pname: st.session_state.icu_beds[bed]="Empty"
+                            push_to_cloud({"action":"discharge","patient_name":pname,
+                                           "status":"Discharged","date":str(datetime.datetime.now())})
+                            log_action(f"Discharged: {pname}")
+                            st.success(f"{pname} discharged.")
                             st.rerun()
 
 # ============================================================
-#   TAB: 📉 FLOWSHEET & TRENDS
+# TAB: FLOWSHEET
 # ============================================================
-with get_tab("📉 Flowsheet & Trends"):
+with T("📉 Flowsheet"):
     st.header("📉 ICU Flowsheet & Vital Trends")
-
-    active_pts_list = [nm for nm, d in st.session_state.patients_db.items() if d.get("status") == "Active"]
-    if not active_pts_list:
+    ap = [n for n,d in st.session_state.patients_db.items() if d.get("status")=="Active"]
+    if not ap:
         st.info("No active patients.")
     else:
-        sel_pt_flow = st.selectbox("Select Patient for Flowsheet:", active_pts_list, key="flow_patient")
-        st.markdown("---")
+        sel_pt = st.selectbox("Patient:", ap)
+        fkey   = f"flow_{sel_pt}"
+        if fkey not in st.session_state: st.session_state[fkey] = []
 
-        # Manual vitals input table
-        st.subheader("📝 Enter Hourly Vitals")
-        if f"flowsheet_{sel_pt_flow}" not in st.session_state:
-            st.session_state[f"flowsheet_{sel_pt_flow}"] = []
+        f1,f2,f3,f4,f5,f6,f7 = st.columns(7)
+        with f1: ft   = st.text_input("Time", datetime.datetime.now().strftime("%H:%M"), key="ft")
+        with f2: fbp  = st.text_input("BP","120/80", key="fbp")
+        with f3: fhr  = st.number_input("HR",0,300,80, key="fhr")
+        with f4: frr  = st.number_input("RR",0,60,16, key="frr")
+        with f5: fsp  = st.number_input("SpO2",0,100,98, key="fsp")
+        with f6: ftmp = st.number_input("Temp",30.0,43.0,37.0,0.1, key="ftmp")
+        with f7: fuo  = st.number_input("UO ml/hr",0,1000,50, key="fuo")
 
-        col_f1, col_f2, col_f3, col_f4, col_f5, col_f6, col_f7 = st.columns(7)
-        with col_f1: f_time = st.text_input("Time", datetime.datetime.now().strftime("%H:%M"), key="f_time")
-        with col_f2: f_bp   = st.text_input("BP",   "120/80", key="f_bp")
-        with col_f3: f_hr   = st.number_input("HR",  0, 300, 80, key="f_hr")
-        with col_f4: f_rr   = st.number_input("RR",  0, 60, 16, key="f_rr")
-        with col_f5: f_spo2 = st.number_input("SpO2", 0, 100, 98, key="f_spo2")
-        with col_f6: f_temp = st.number_input("Temp", 30.0, 43.0, 37.0, 0.1, key="f_temp")
-        with col_f7: f_uo   = st.number_input("UO (ml/hr)", 0, 1000, 50, key="f_uo")
+        if st.button("➕ Add Vitals"):
+            st.session_state[fkey].append({"Time":ft,"BP":fbp,"HR":fhr,"RR":frr,"SpO2":fsp,"Temp":ftmp,"UO":fuo})
+            log_action(f"Vitals added: {sel_pt}")
+            st.success("Added!")
 
-        if st.button("➕ Add Vitals to Flowsheet"):
-            st.session_state[f"flowsheet_{sel_pt_flow}"].append({
-                "Time": f_time, "BP": f_bp, "HR": f_hr,
-                "RR": f_rr, "SpO2": f_spo2, "Temp": f_temp, "UO": f_uo
-            })
-            log_action(f"Vitals added for {sel_pt_flow}")
-            st.success("Vitals added!")
-
-        flowsheet_data = st.session_state.get(f"flowsheet_{sel_pt_flow}", [])
-        if flowsheet_data:
-            df_flow = pd.DataFrame(flowsheet_data)
-            st.dataframe(df_flow, use_container_width=True, hide_index=True)
-
-            # Charts
-            st.subheader("📈 Trend Charts")
-            col_ch1, col_ch2 = st.columns(2)
-            with col_ch1:
-                try:
-                    st.line_chart(df_flow.set_index("Time")[["HR", "RR"]])
-                    st.caption("Heart Rate & Respiratory Rate Trend")
+        fdata = st.session_state.get(fkey,[])
+        if fdata:
+            df = pd.DataFrame(fdata)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            ch1,ch2 = st.columns(2)
+            with ch1:
+                try: st.line_chart(df.set_index("Time")[["HR","RR"]]); st.caption("HR & RR")
                 except: pass
-            with col_ch2:
-                try:
-                    st.line_chart(df_flow.set_index("Time")[["SpO2"]])
-                    st.caption("SpO2 Trend")
+            with ch2:
+                try: st.line_chart(df.set_index("Time")[["SpO2"]]); st.caption("SpO2")
                 except: pass
 
-            if st.button("📄 Download Flowsheet PDF"):
-                try:
-                    flow_text = df_flow.to_string(index=False)
-                    pdf_path  = generate_pdf("ICU FLOWSHEET", sel_pt_flow, flow_text, st.session_state.current_user)
-                    with open(pdf_path, "rb") as f:
-                        st.download_button("📥 Download", data=f, file_name=f"{sel_pt_flow}_Flowsheet.pdf", mime="application/pdf")
-                except Exception as e:
-                    st.error(f"PDF error: {e}")
-
 # ============================================================
-#   TAB: 🚨 EARLY WARNING SYSTEM (NEWS2 + APACHE)
+# TAB: EARLY WARNING
 # ============================================================
-with get_tab("🚨 Early Warning"):
-    st.header("🚨 Early Warning System — NEWS2 Score & Deterioration Radar")
+with T("🚨 Early Warning"):
+    st.header("🚨 Early Warning — NEWS2 & Sepsis Screening")
+    ew1,ew2 = st.columns(2)
+    with ew1:
+        st.subheader("🩺 NEWS2 Calculator")
+        e_rr  = st.number_input("Respiratory Rate:",0,60,16,key="e_rr")
+        e_sp  = st.number_input("SpO2 (%):",0,100,97,key="e_sp")
+        e_o2  = st.checkbox("On supplemental O2?")
+        e_sbp = st.number_input("Systolic BP (mmHg):",50,250,120,key="e_sbp")
+        e_hr  = st.number_input("Heart Rate:",0,300,80,key="e_hr")
+        e_tmp = st.number_input("Temperature (°C):",30.0,43.0,37.0,0.1,key="e_tmp")
+        e_av  = st.selectbox("AVPU:",["Alert","Confusion/New","Voice","Pain","Unresponsive"])
 
-    col_ew1, col_ew2 = st.columns(2)
-    with col_ew1:
-        st.subheader("🩺 NEWS2 Score Calculator")
-        ew_rr   = st.number_input("Respiratory Rate (/min):", 0, 60, 16, key="ew_rr")
-        ew_spo2 = st.number_input("SpO2 (%):", 0, 100, 97, key="ew_spo2")
-        ew_o2   = st.checkbox("On supplemental oxygen?", key="ew_o2")
-        ew_sbp  = st.number_input("Systolic BP (mmHg):", 50, 250, 120, key="ew_sbp")
-        ew_hr   = st.number_input("Heart Rate (bpm):", 0, 300, 80, key="ew_hr")
-        ew_temp = st.number_input("Temperature (°C):", 30.0, 43.0, 37.0, 0.1, key="ew_temp")
-        ew_avpu = st.selectbox("Consciousness (AVPU):", ["Alert", "Confusion/New", "Voice", "Pain", "Unresponsive"])
-        ew_cap  = st.checkbox("Hypercapnic respiratory failure (COPD)?", key="ew_cap")
-
-        if st.button("📊 Calculate NEWS2 Score", type="primary"):
-            score, risk, color, action = calc_news2(ew_rr, ew_spo2, ew_o2, ew_sbp, ew_hr, ew_temp, ew_avpu, ew_cap)
+        if st.button("📊 Calculate NEWS2", type="primary"):
+            sc,risk,color,action = calc_news2(e_rr,e_sp,e_o2,e_sbp,e_hr,e_tmp,e_av)
+            bg = "#6b1a1a" if "HIGH" in risk else ("#7a6b00" if "MEDIUM" in risk else "#1e4d1e")
             st.markdown(f"""
-            <div style="background:{'#8b1a1a' if risk in ['HIGH','MEDIUM-HIGH'] else ('#7a6b00' if risk=='MEDIUM' else '#2d5a27')};
-                        padding:20px;border-radius:12px;color:white;text-align:center;margin:10px 0">
-              <h2 style="margin:0">{color} NEWS2 Score: {score}</h2>
-              <h3 style="margin:5px 0">Risk Level: {risk}</h3>
-              <p style="margin:5px 0">ACTION: {action}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            log_action(f"NEWS2 calculated: Score {score} ({risk})")
+            <div style='background:{bg};padding:20px;border-radius:12px;color:white;text-align:center'>
+              <h2>{color} NEWS2: {sc}</h2><h3>Risk: {risk}</h3><p>{action}</p>
+            </div>""", unsafe_allow_html=True)
+            log_action(f"NEWS2: {sc} ({risk})")
 
-    with col_ew2:
-        st.subheader("🦠 Sepsis Screening (qSOFA)")
-        q_rr     = st.number_input("Respiratory Rate:", 0, 60, 16, key="q_rr")
-        q_gcs    = st.number_input("GCS:", 3, 15, 15, key="q_gcs")
-        q_sbp    = st.number_input("Systolic BP (mmHg):", 50, 250, 110, key="q_sbp")
-        q_fever  = st.checkbox("Temperature > 38°C or < 36°C?")
-        q_wbc    = st.checkbox("WBC > 12,000 or < 4,000?")
-        q_source = st.checkbox("Suspected infection source?")
+    with ew2:
+        st.subheader("🦠 qSOFA Sepsis Screen")
+        q_rr  = st.number_input("RR:",0,60,16,key="q_rr")
+        q_gcs = st.number_input("GCS:",3,15,15,key="q_gcs")
+        q_sbp = st.number_input("Systolic BP:",50,250,110,key="q_sbp")
 
-        if st.button("🦠 Calculate qSOFA & Sepsis Risk", type="primary"):
-            qsofa = 0
-            if q_rr >= 22: qsofa += 1
-            if q_gcs < 15: qsofa += 1
-            if q_sbp <= 100: qsofa += 1
-            sirs_count = sum([q_fever, q_wbc, q_rr >= 20])
-
+        if st.button("🦠 Calculate qSOFA", type="primary"):
+            qs = sum([q_rr>=22, q_gcs<15, q_sbp<=100])
+            bg = "#6b1a1a" if qs>=2 else "#1e4d1e"
+            msg = "HIGH SEPSIS RISK — Activate Sepsis Protocol!" if qs>=2 else "Low-Moderate Risk — Monitor"
             st.markdown(f"""
-            <div style="background:{'#8b1a1a' if qsofa >= 2 else '#2d5a27'};
-                        padding:20px;border-radius:12px;color:white;text-align:center">
-              <h2>qSOFA Score: {qsofa}/3</h2>
-              <p>{'HIGH SEPSIS RISK — Activate Sepsis Protocol!' if qsofa >= 2 else 'Low-Moderate Risk — Monitor closely'}</p>
-              <p>SIRS Criteria Met: {sirs_count}/3</p>
-            </div>
-            """, unsafe_allow_html=True)
-            log_action(f"qSOFA: {qsofa}/3")
+            <div style='background:{bg};padding:20px;border-radius:12px;color:white;text-align:center'>
+              <h2>qSOFA: {qs}/3</h2><p>{msg}</p>
+            </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
-    st.subheader("🚨 AI Deterioration Analysis")
-    deter_notes = st.text_area("Paste current vitals/trends for AI deterioration risk assessment:", height=100)
-    if st.button("🧠 AI Deterioration Analysis") and deter_notes:
-        with st.spinner("AI analyzing deterioration risk..."):
+    st.subheader("🧠 AI Deterioration Analysis")
+    det_txt = st.text_area("Paste vitals/findings for AI risk assessment:", height=100)
+    if st.button("🧠 Analyze Deterioration Risk") and det_txt and is_engine_ready:
+        with st.spinner("AI analyzing..."):
             try:
-                deter_prompt = f"""
-                You are a Critical Care AI Deterioration Radar.
-                Patient data: {deter_notes}
-                
-                Analyze:
-                1. DETERIORATION RISK: LOW / MEDIUM / HIGH / CRITICAL
-                2. WARNING SIGNS: List specific concerning parameters.
-                3. PREDICTED COMPLICATIONS: What might happen in next 4-12 hours?
-                4. IMMEDIATE INTERVENTIONS: What must be done NOW?
-                5. MONITORING ESCALATION: Frequency of checks?
-                
-                PLAIN TEXT ONLY. NO ASTERISKS.
-                """
-                deter_result = smart_generate([deter_prompt])
-                st.info(deter_result)
-                log_action("AI Deterioration Analysis run")
-            except Exception as e:
-                st.error(str(e))
+                dp = f"""Critical Care AI: Analyze deterioration risk for: {det_txt}
+1. RISK LEVEL (LOW/MEDIUM/HIGH/CRITICAL)
+2. WARNING SIGNS
+3. PREDICTED COMPLICATIONS (next 4-12 hrs)
+4. IMMEDIATE INTERVENTIONS
+5. MONITORING ESCALATION
+PLAIN TEXT ONLY. NO ASTERISKS."""
+                st.info(smart_generate([dp]))
+            except Exception as e: st.error(str(e))
 
 # ============================================================
-#   TAB: 💊 MEDICATION SAFETY
+# TAB: MEDICATIONS
 # ============================================================
-with get_tab("💊 Medication Safety"):
-    st.header("💊 Medication Safety — DDI Checker & Dose Calculator")
+with T("💊 Medications"):
+    st.header("💊 Medication Safety & Dose Calculator")
+    med1,med2 = st.columns(2)
+    with med1:
+        st.subheader("⚠️ DDI Checker")
+        med_list   = st.text_area("All medications (one per line):", height=180,
+            placeholder="Aspirin 75mg OD\nClopidogrel 75mg OD\nEnoxaparin 40mg BD\nAmiodarone 200mg TDS")
+        renal      = st.selectbox("Renal Function:",["Normal","Mild (CrCl 60-90)","Moderate (CrCl 30-60)","Severe (CrCl 15-30)","ESRD/Dialysis"])
+        hepatic    = st.selectbox("Hepatic Function:",["Normal","Child-Pugh A","Child-Pugh B","Child-Pugh C"])
 
-    col_med1, col_med2 = st.columns(2)
-    with col_med1:
-        st.subheader("⚠️ Drug-Drug Interaction Checker")
-        st.caption("Enter all medications the patient is on — one per line.")
-        med_list = st.text_area(
-            "Patient's Medication List:",
-            height=200,
-            placeholder="Example:\nAspirin 75mg OD\nClopidogrel 75mg OD\nEnoxaparin 40mg BD\nFurosemide 40mg IV BD\nAmiodarone 200mg TDS\nWarfarin 5mg OD"
-        )
-        renal_fn   = st.selectbox("Renal Function:", ["Normal", "Mild impairment (CrCl 60-90)", "Moderate (CrCl 30-60)", "Severe (CrCl 15-30)", "ESRD/Dialysis"])
-        hepatic_fn = st.selectbox("Hepatic Function:", ["Normal", "Child-Pugh A (Mild)", "Child-Pugh B (Moderate)", "Child-Pugh C (Severe)"])
-
-        if st.button("🔬 Full Pharmacology Safety Scan", type="primary"):
-            if not med_list.strip():
-                st.warning("Please enter the medication list.")
-            elif not is_engine_ready:
-                st.error("AI engine offline.")
+        if st.button("🔬 Pharmacology Safety Scan", type="primary"):
+            if not med_list.strip(): st.warning("Enter medications.")
+            elif not is_engine_ready: st.error("AI offline.")
             else:
-                with st.spinner("Clinical Pharmacologist AI scanning..."):
+                with st.spinner("Scanning..."):
                     try:
-                        med_prompt = f"""
-                        You are a Senior Clinical Pharmacologist in a Cardiac ICU.
-                        Patient's medications: {med_list}
-                        Renal Function: {renal_fn}
-                        Hepatic Function: {hepatic_fn}
+                        mp = f"""Senior Clinical Pharmacologist — ICU Cardiac, Kerala.
+Medications: {med_list}
+Renal: {renal} | Hepatic: {hepatic}
+1. DANGEROUS DDIs (CONTRAINDICATED/MAJOR/MODERATE/MINOR — be specific)
+2. DOSE ADJUSTMENTS for renal impairment (drug name + adjusted dose)
+3. HEPATIC ADJUSTMENTS
+4. MONITORING PARAMETERS
+5. ANTICOAGULATION SAFETY (if applicable)
+6. SAFER ALTERNATIVES for any contraindicated combos
+PLAIN TEXT ONLY. NO ASTERISKS."""
+                        res = smart_generate([mp])
+                        log_action("Med safety scan")
+                        st.success("Scan complete!")
+                        st.info(res)
+                    except Exception as e: st.error(str(e))
 
-                        Perform a COMPLETE PHARMACOLOGY SAFETY ANALYSIS:
-                        1. DANGEROUS DDIs: List ALL clinically significant drug-drug interactions with severity (CONTRAINDICATED / MAJOR / MODERATE / MINOR).
-                        2. DOSE ADJUSTMENTS NEEDED: For renal impairment, list drugs needing dose reduction and the adjusted dose.
-                        3. HEPATIC ADJUSTMENTS: For hepatic impairment, list drugs needing modification.
-                        4. MONITORING PARAMETERS: Specific levels/tests to monitor for each high-risk drug.
-                        5. ANTICOAGULATION SAFETY: If any anticoagulants — bleeding risk assessment, monitoring requirements.
-                        6. RECOMMENDATIONS: Suggested alternatives for any contraindicated combinations.
+    with med2:
+        st.subheader("💉 ICU Infusion Rate Calculator")
+        drug   = st.selectbox("Drug:",["Norepinephrine","Dopamine","Dobutamine","Adrenaline","GTN","Furosemide","Insulin","Midazolam","Morphine","Amiodarone"])
+        wt     = st.number_input("Weight (kg):",30.0,200.0,65.0,0.5)
+        dose   = st.number_input("Dose (mcg/kg/min):",0.0,100.0,0.1,0.01)
+        conc   = st.number_input("Concentration (mcg/ml):",0.1,10000.0,100.0,0.1)
 
-                        PLAIN TEXT ONLY. NO ASTERISKS. Be very specific with drug names and doses.
-                        """
-                        med_result = smart_generate([med_prompt])
-                        st.success("Pharmacology Safety Scan Complete!")
-                        st.info(med_result)
-                        log_action("Medication safety scan run")
-
-                        if st.button("📄 Download Medication Safety Report"):
-                            pdf_path = generate_pdf("MEDICATION SAFETY REPORT", "Patient Review", med_result, st.session_state.current_user)
-                            with open(pdf_path, "rb") as f:
-                                st.download_button("📥 Download", data=f, file_name="Medication_Safety.pdf", mime="application/pdf")
-                    except Exception as e:
-                        st.error(str(e))
-
-    with col_med2:
-        st.subheader("💉 Critical Care Dose Calculator")
-        st.caption("Common ICU drug infusions — dose calculator")
-
-        calc_drug = st.selectbox("Select Drug:", [
-            "Norepinephrine (Norad)",
-            "Dopamine",
-            "Dobutamine",
-            "Adrenaline (Epinephrine)",
-            "Nitroglycerin (GTN)",
-            "Heparin Infusion",
-            "Insulin Infusion",
-            "Furosemide Infusion",
-            "Midazolam Infusion",
-            "Morphine Infusion",
-            "Amiodarone Loading",
-        ])
-        calc_weight = st.number_input("Patient Weight (kg):", 30.0, 200.0, 65.0, 0.5)
-        calc_dose   = st.number_input("Desired Dose (mcg/kg/min or units/hr):", 0.0, 100.0, 0.1, 0.01)
-        calc_conc   = st.number_input("Drug Concentration (mcg/ml):", 0.1, 10000.0, 100.0, 0.1)
-
-        if st.button("🧮 Calculate Infusion Rate"):
-            if calc_drug in ["Norepinephrine (Norad)", "Dopamine", "Dobutamine", "Adrenaline (Epinephrine)"]:
-                rate_ml_hr = (calc_dose * calc_weight * 60) / calc_conc
-                st.success(f"Infusion Rate: **{rate_ml_hr:.2f} ml/hr**")
-                st.caption(f"For {calc_drug} at {calc_dose} mcg/kg/min for {calc_weight}kg patient")
-            else:
-                rate_ml_hr = (calc_dose * 60) / calc_conc
-                st.success(f"Infusion Rate: **{rate_ml_hr:.2f} ml/hr**")
-            log_action(f"Dose calculator: {calc_drug} = {rate_ml_hr:.2f} ml/hr")
+        if st.button("🧮 Calculate Rate"):
+            rate = (dose * wt * 60) / conc if conc>0 else 0
+            st.success(f"Infusion Rate: **{rate:.2f} ml/hr**")
+            st.caption(f"{drug} | {dose} mcg/kg/min | {wt}kg | {conc} mcg/ml")
+            log_action(f"Dose calc: {drug} = {rate:.2f} ml/hr")
 
 # ============================================================
-#   TAB: 🔄 SHIFT HANDOVER
+# TAB: HANDOVER
 # ============================================================
-with get_tab("🔄 Shift Handover"):
-    st.header("🔄 Shift Handover — Structured ISBAR Handover Notes")
-    st.caption("Generate AI-powered shift handover for all active patients in one click.")
+with T("🔄 Handover"):
+    st.header("🔄 Shift Handover — ISBAR Format")
+    h1c,h2c = st.columns(2)
+    with h1c: out_dr = st.text_input("Outgoing Doctor:", value=st.session_state.current_user.split("(")[0].strip())
+    with h2c: in_dr  = st.text_input("Incoming Doctor:", placeholder="Name of next duty doctor")
+    extra = st.text_area("Pending tasks / concerns:", height=70)
 
-    active_for_handover = {k: v for k, v in st.session_state.patients_db.items() if v.get("status") == "Active"}
-
-    col_ho1, col_ho2 = st.columns(2)
-    with col_ho1:
-        outgoing_dr = st.text_input("Outgoing Doctor:", value=st.session_state.current_user.split("(")[0].strip())
-    with col_ho2:
-        incoming_dr = st.text_input("Incoming Doctor:", placeholder="Name of next duty doctor")
-
-    additional_notes = st.text_area("Additional Handover Notes (pending tasks, concerns):", height=80)
-
-    if st.button("🔄 Generate AI ISBAR Handover for ALL Active Patients", type="primary"):
-        if not active_for_handover:
-            st.warning("No active patients to handover.")
-        elif not is_engine_ready:
-            st.error("AI engine offline.")
+    if st.button("🔄 Generate ISBAR Handover for ALL Patients", type="primary"):
+        ap2 = {k:v for k,v in st.session_state.patients_db.items() if v.get("status")=="Active"}
+        if not ap2: st.warning("No active patients.")
+        elif not is_engine_ready: st.error("AI offline.")
         else:
-            with st.spinner("Generating structured ISBAR handover..."):
+            with st.spinner("Generating handover..."):
                 try:
-                    handover_content = []
-                    for pt_name, pt_data in active_for_handover.items():
-                        history = pt_data.get("history", [])
-                        latest_summary = history[-1].get("summary", "") if history else "No data"
+                    parts = []
+                    for pn, pd2 in ap2.items():
+                        hist2  = pd2.get("history",[])
+                        latest2 = hist2[-1].get("summary","No data") if hist2 else "No data"
+                        hp = f"""ISBAR handover for {pn}:
+Previous summary: {latest2[:600]}
+Write 5 bullet points: current status, active issues, current infusions/meds, pending actions, what incoming doctor must watch.
+PLAIN TEXT. NO ASTERISKS."""
+                        hr2 = smart_generate([hp])
+                        parts.append(f"--- {pn} ---\n{hr2}")
 
-                        h_prompt = f"""
-                        Generate a concise ISBAR (Identify, Situation, Background, Assessment, Recommendation) handover for:
-                        Patient: {pt_name}
-                        Latest Clinical Summary: {latest_summary[:800]}
+                    full = f"""SHIFT HANDOVER — {datetime.datetime.now().strftime('%d %b %Y, %I:%M %p')}
+Outgoing: {out_dr}
+Incoming: {in_dr}
+Active Patients: {len(ap2)}
 
-                        Format: 5 bullet points maximum, very concise, focus on:
-                        - Current status and acuity
-                        - Active issues and concerns
-                        - Current medications/infusions
-                        - Pending results/actions
-                        - What the incoming doctor must watch for
-
-                        PLAIN TEXT ONLY. NO ASTERISKS.
-                        """
-                        h_result = smart_generate([h_prompt])
-                        handover_content.append(f"--- {pt_name} ---\n{h_result}")
-
-                    full_handover = f"""
-SHIFT HANDOVER REPORT
-=====================
-Date: {datetime.datetime.now().strftime('%d %b %Y, %I:%M %p')}
-Outgoing: {outgoing_dr}
-Incoming: {incoming_dr}
-Active Patients: {len(active_for_handover)}
-
-{chr(10).join(handover_content)}
+{"=" * 50}
+{chr(10).join(parts)}
+{"=" * 50}
 
 ADDITIONAL NOTES:
-{additional_notes}
+{extra}
 
-Handover completed and acknowledged.
-                    """
-                    st.session_state.handover_notes.insert(0, {
-                        "date": str(datetime.datetime.now()),
-                        "outgoing": outgoing_dr,
-                        "incoming": incoming_dr,
-                        "content": full_handover
-                    })
-                    log_action(f"Handover: {outgoing_dr} → {incoming_dr}")
+Handover completed.
+"""
+                    st.session_state.handover_notes.insert(0,{"date":str(datetime.datetime.now()),"outgoing":out_dr,"incoming":in_dr,"content":full})
+                    log_action(f"Handover: {out_dr} → {in_dr}")
                     st.success("Handover generated!")
-                    st.info(full_handover)
-
-                    pdf_path = generate_pdf("SHIFT HANDOVER REPORT", "All Active Patients", full_handover, outgoing_dr)
-                    with open(pdf_path, "rb") as f:
-                        st.download_button(
-                            "📥 Download Handover PDF",
-                            data=f,
-                            file_name=f"Handover_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                            mime="application/pdf"
-                        )
-                except Exception as e:
-                    st.error(str(e))
-
-    # Previous handovers
-    if st.session_state.handover_notes:
-        st.markdown("---")
-        st.subheader("📋 Previous Handovers (This Session)")
-        for h in st.session_state.handover_notes[:3]:
-            with st.expander(f"Handover — {h['outgoing']} → {h['incoming']} | {h['date'][:16]}"):
-                st.text(h["content"][:1000])
+                    st.info(full)
+                    if FPDF_AVAILABLE:
+                        hp2 = generate_pdf("SHIFT HANDOVER", "All Active Patients", full, out_dr)
+                        if hp2:
+                            with open(hp2,"rb") as f:
+                                st.download_button("📥 Download Handover PDF", data=f,
+                                    file_name=f"Handover_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                                    mime="application/pdf")
+                except Exception as e: st.error(str(e))
 
 # ============================================================
-#   TAB: 🔬 ACADEMIC VAULT
+# TAB: ACADEMIC
 # ============================================================
-with get_tab("🔬 Academic Vault"):
-    st.header("🔬 Academic Vault — CME, Guidelines & Research")
+with T("🔬 Academic"):
+    st.header("🔬 Academic Vault — CME & Clinical Guidelines")
 
-    av_topic = st.text_input(
-        "Enter clinical topic for academic deep-dive:",
-        placeholder="e.g., Management of Cardiogenic Shock, STEMI guidelines 2024, Vasopressor use in ICU..."
-    )
-
-    col_av1, col_av2, col_av3 = st.columns(3)
-    with col_av1: av_type = st.selectbox("Content Type:", ["Clinical Guideline", "Case Discussion", "Drug Protocol", "Procedure Guide", "Research Summary", "CME Quiz"])
-    with col_av2: av_level = st.selectbox("Level:", ["Resident (Basic)", "Senior Resident (Intermediate)", "Consultant (Advanced)", "Fellowship Level (Expert)"])
-    with col_av3: av_ref   = st.selectbox("Reference Guidelines:", ["AHA/ACC 2024", "ESC 2024", "SCCM/ESICM", "Indian Guidelines (CSI/ISCCM)", "Multiple Guidelines"])
+    topic  = st.text_input("Topic:", placeholder="e.g. Cardiogenic Shock, STEMI 2024 guidelines, Vasopressor use in ICU")
+    ac1,ac2,ac3 = st.columns(3)
+    with ac1: ct  = st.selectbox("Type:",["Clinical Guideline","Drug Protocol","Case Discussion","Procedure Guide","CME Quiz"])
+    with ac2: lv  = st.selectbox("Level:",["Resident","Senior Resident","Consultant","Fellowship"])
+    with ac3: ref = st.selectbox("Reference:",["AHA/ACC 2024","ESC 2024","SCCM/ESICM","Indian (CSI/ISCCM)","Multiple"])
 
     if st.button("📚 Generate Academic Content", type="primary"):
-        if not av_topic.strip():
-            st.warning("Please enter a topic.")
-        elif not is_engine_ready:
-            st.error("AI engine offline.")
+        if not topic.strip(): st.warning("Enter a topic.")
+        elif not is_engine_ready: st.error("AI offline.")
         else:
-            with st.spinner(f"Fetching {av_type} on {av_topic}..."):
+            with st.spinner("Generating..."):
                 try:
-                    av_prompt = f"""
-                    You are a world-class medical educator and intensivist, creating content for a Cardiac ICU in Kerala, India.
-                    Topic: {av_topic}
-                    Content Type: {av_type}
-                    Target Level: {av_level}
-                    Reference: {av_ref}
-
-                    Generate a comprehensive, clinically accurate, and up-to-date {av_type} covering:
-                    - Definition and pathophysiology
-                    - Diagnostic criteria with specific values
-                    - Step-by-step management protocol
-                    - Drug doses (use Indian generic names, mention brand names where helpful)
-                    - Monitoring parameters and targets
-                    - Complications and how to avoid them
-                    - Key clinical pearls (what not to miss)
-                    - Summary table of key points
-
-                    {"Include 5 MCQ-style questions with answers for CME assessment." if av_type == "CME Quiz" else ""}
-
-                    WRITE IN PLAIN TEXT ONLY. NO ASTERISKS OR HASH SYMBOLS. Be thorough and educational.
-                    """
-                    av_result = smart_generate([av_prompt])
-                    log_action(f"Academic content: {av_topic}")
-                    st.success("Academic content generated!")
-                    st.info(av_result)
-
-                    col_pdf1, col_pdf2 = st.columns(2)
-                    with col_pdf1:
-                        pdf_path = generate_pdf(f"{av_type.upper()}: {av_topic.upper()}", "Academic Reference", av_result, st.session_state.current_user)
-                        with open(pdf_path, "rb") as f:
-                            st.download_button(
-                                "📥 Download as PDF",
-                                data=f,
-                                file_name=f"Academic_{av_topic.replace(' ', '_')[:30]}.pdf",
-                                mime="application/pdf"
-                            )
-                except Exception as e:
-                    st.error(str(e))
+                    ap3 = f"""Medical educator + Intensivist, Cardiac ICU Kerala.
+Topic: {topic} | Type: {ct} | Level: {lv} | Reference: {ref}
+Write comprehensive {ct}: definition, pathophysiology, diagnosis criteria, step-by-step management,
+drug doses (Indian generic names), monitoring targets, complications, clinical pearls.
+{"Include 5 MCQs with answers." if ct=="CME Quiz" else ""}
+PLAIN TEXT ONLY. NO ASTERISKS."""
+                    ar = smart_generate([ap3])
+                    log_action(f"Academic: {topic}")
+                    st.success("Generated!")
+                    st.info(ar)
+                    if FPDF_AVAILABLE:
+                        apath = generate_pdf(f"{ct.upper()}: {topic[:40].upper()}", "Academic", ar, st.session_state.current_user)
+                        if apath:
+                            with open(apath,"rb") as f:
+                                st.download_button("📥 Download PDF", data=f,
+                                    file_name=f"Academic_{topic.replace(' ','_')[:30]}.pdf",
+                                    mime="application/pdf")
+                except Exception as e: st.error(str(e))
 
     st.markdown("---")
-    st.subheader("💡 Quick Reference Cards")
-    quick_topics = [
-        "STEMI Door-to-Balloon Protocol",
-        "Cardiogenic Shock Management",
-        "Acute Pulmonary Edema Treatment",
-        "Ventricular Fibrillation / VT Management",
-        "Hypertensive Emergency Drugs & Doses",
-        "Anticoagulation in AF + ACS",
-        "AKI in ICU — Fluid & Electrolyte Management",
-        "Septic Shock — Surviving Sepsis Bundle",
-        "NIV (BIPAP) Setup & Weaning",
-        "Ventilator Management Basics"
-    ]
-    selected_quick = st.selectbox("Quick Reference Topics:", quick_topics)
-    if st.button("⚡ Quick Generate (1-Page Reference Card)"):
-        with st.spinner("Generating quick reference card..."):
+    st.subheader("⚡ Quick 1-Page Reference Cards")
+    quick_list = ["STEMI Protocol","Cardiogenic Shock","Acute Pulmonary Edema","VT/VF Management",
+                  "Hypertensive Emergency","Septic Shock Bundle","AKI Management",
+                  "NIV/BiPAP Setup","Anticoagulation in AF+ACS","Post-PCI Care"]
+    qsel = st.selectbox("Select:", quick_list)
+    if st.button("⚡ Quick Generate"):
+        with st.spinner("Generating..."):
             try:
-                quick_prompt = f"""
-                Create a concise 1-PAGE QUICK REFERENCE CARD for: {selected_quick}
-                Include ONLY the most critical and actionable information:
-                - 3-5 diagnostic criteria
-                - 5-8 step management protocol
-                - Key drug doses
-                - 3 critical monitoring points
-                - 2 common mistakes to avoid
-                
-                Format like a bedside reference card. Very concise. PLAIN TEXT. NO ASTERISKS.
-                """
-                quick_result = smart_generate([quick_prompt])
-                st.success("Quick reference card ready!")
-                st.info(quick_result)
-                log_action(f"Quick reference: {selected_quick}")
-            except Exception as e:
-                st.error(str(e))
+                qp = f"""1-PAGE QUICK REFERENCE CARD for: {qsel}
+Include ONLY the most critical bedside info:
+- 3-5 diagnostic criteria
+- 5-8 step management
+- Key drug doses
+- 3 monitoring targets
+- 2 mistakes to avoid
+Very concise. PLAIN TEXT. NO ASTERISKS."""
+                qr = smart_generate([qp])
+                st.success("Ready!")
+                st.info(qr)
+                log_action(f"Quick ref: {qsel}")
+            except Exception as e: st.error(str(e))
 
 # ============================================================
 # FOOTER
 # ============================================================
 st.markdown("---")
 st.markdown("""
-<div style="text-align:center;color:gray;font-size:12px">
-Dr. Gill's Cardiac & Critical Care ICU Command System v2.0 | Kerala, India | 
-AI-Powered by Google Gemini | Built for demonstration purposes | 
-Consult qualified clinicians for all medical decisions
-</div>
-""", unsafe_allow_html=True)
+<div style='text-align:center;color:gray;font-size:12px'>
+Dr. Gill's Cardiac ICU Command System v2.0 | Kerala, India |
+AI-Powered by Google Gemini | For demonstration & clinical decision support |
+Always verify with qualified clinicians
+</div>""", unsafe_allow_html=True)
