@@ -242,101 +242,103 @@ def generate_pdf(title, patient_name, text_content, doctor_name=""):
 # VOICE TYPING COMPONENT
 # ============================================================
 def voice_input_widget(label="🎤 Tap to Speak", key="voice"):
-    """Browser-based voice-to-text using Web Speech API. Works on Chrome/Android/iPhone."""
+    """Browser-based voice-to-text. Works inside expanders and loops."""
+    # CRITICAL FIX: sanitize key so it is always a valid JS identifier
+    # Patient names have spaces/dots/special chars — all replaced with underscore
+    import re
+    safe_key = re.sub(r'[^a-zA-Z0-9]', '_', str(key))
+
     voice_html = f"""
     <div style="margin:8px 0">
-      <button id="voiceBtn_{key}"
-        onclick="toggleVoice_{key}()"
+      <button id="vBtn_{safe_key}"
+        onclick="vToggle_{safe_key}()"
         style="background:#1a3a6e;color:white;border:none;padding:10px 22px;
                border-radius:24px;font-size:15px;cursor:pointer;width:100%">
         🎤 {label}
       </button>
-      <div id="voiceStatus_{key}"
-           style="margin-top:6px;font-size:13px;color:#888;text-align:center">
-        Press button and speak clearly in English or Hindi
+      <div id="vStat_{safe_key}"
+           style="margin-top:6px;font-size:13px;color:#666;text-align:center">
+        Press and speak clearly — works on Chrome (Android/Desktop)
       </div>
-      <textarea id="voiceOut_{key}"
+      <textarea id="vOut_{safe_key}"
         style="width:100%;margin-top:6px;padding:8px;border-radius:8px;
-               border:1px solid #ccc;font-size:14px;min-height:80px;display:none"
-        placeholder="Spoken text will appear here..."></textarea>
-      <button id="copyBtn_{key}" onclick="copyVoice_{key}()"
-        style="display:none;margin-top:6px;background:#2d5a27;color:white;
-               border:none;padding:8px 18px;border-radius:8px;font-size:13px;cursor:pointer">
-        📋 Copy Text
+               border:1px solid #aaa;font-size:14px;min-height:75px;display:none"
+        placeholder="Your spoken words appear here..."></textarea>
+      <button id="vCopy_{safe_key}" onclick="vCopyFn_{safe_key}()"
+        style="display:none;margin-top:5px;background:#2d5a27;color:white;
+               border:none;padding:8px 20px;border-radius:8px;font-size:13px;cursor:pointer">
+        📋 Copy Text — then paste in notes box below
       </button>
     </div>
-
     <script>
-    var recognizing_{key} = false;
-    var recognition_{key};
+    (function() {{
+      var isOn_{safe_key} = false;
+      var rec_{safe_key}  = null;
 
-    function toggleVoice_{key}() {{
-      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {{
-        document.getElementById('voiceStatus_{key}').innerHTML =
-          '❌ Voice not supported. Use Chrome browser on Android/Desktop.';
-        return;
-      }}
-      if (recognizing_{key}) {{
-        recognition_{key}.stop();
-        return;
-      }}
-      recognition_{key} = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-      recognition_{key}.lang = 'en-IN';
-      recognition_{key}.interimResults = true;
-      recognition_{key}.maxAlternatives = 1;
-      recognition_{key}.continuous = true;
-
-      recognition_{key}.onstart = function() {{
-        recognizing_{key} = true;
-        document.getElementById('voiceBtn_{key}').innerHTML = '🔴 LISTENING... (Tap to Stop)';
-        document.getElementById('voiceBtn_{key}').style.background = '#8b1a1a';
-        document.getElementById('voiceStatus_{key}').innerHTML = '🎙️ Speak now...';
-        document.getElementById('voiceOut_{key}').style.display = 'block';
-        document.getElementById('copyBtn_{key}').style.display = 'inline-block';
-      }};
-
-      recognition_{key}.onresult = function(event) {{
-        var interim = '';
-        var final_txt = '';
-        for (var i = event.resultIndex; i < event.results.length; i++) {{
-          if (event.results[i].isFinal) {{
-            final_txt += event.results[i][0].transcript + ' ';
-          }} else {{
-            interim += event.results[i][0].transcript;
-          }}
+      window.vToggle_{safe_key} = function() {{
+        if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {{
+          document.getElementById('vStat_{safe_key}').innerText =
+            'Voice NOT supported here. Open app in Chrome browser.';
+          return;
         }}
-        var box = document.getElementById('voiceOut_{key}');
-        box.value = box.value + final_txt;
-        document.getElementById('voiceStatus_{key}').innerHTML =
-          interim ? '🎙️ Hearing: ' + interim : '✅ Captured. Keep speaking or tap to stop.';
+        if (isOn_{safe_key}) {{
+          rec_{safe_key}.stop();
+          return;
+        }}
+        rec_{safe_key} = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        rec_{safe_key}.lang            = 'en-IN';
+        rec_{safe_key}.interimResults  = true;
+        rec_{safe_key}.continuous      = true;
+        rec_{safe_key}.maxAlternatives = 1;
+
+        rec_{safe_key}.onstart = function() {{
+          isOn_{safe_key} = true;
+          document.getElementById('vBtn_{safe_key}').innerText  = '🔴 RECORDING... Tap to Stop';
+          document.getElementById('vBtn_{safe_key}').style.background = '#8b1a1a';
+          document.getElementById('vStat_{safe_key}').innerText = 'Listening... speak now';
+          document.getElementById('vOut_{safe_key}').style.display  = 'block';
+          document.getElementById('vCopy_{safe_key}').style.display = 'inline-block';
+        }};
+
+        rec_{safe_key}.onresult = function(e) {{
+          var interim = '', final_t = '';
+          for (var i = e.resultIndex; i < e.results.length; i++) {{
+            if (e.results[i].isFinal) final_t += e.results[i][0].transcript + ' ';
+            else interim += e.results[i][0].transcript;
+          }}
+          document.getElementById('vOut_{safe_key}').value += final_t;
+          document.getElementById('vStat_{safe_key}').innerText =
+            interim ? 'Hearing: ' + interim : 'Got it! Keep speaking or tap to stop.';
+        }};
+
+        rec_{safe_key}.onerror = function(e) {{
+          document.getElementById('vStat_{safe_key}').innerText = 'Error: ' + e.error + ' — try again';
+        }};
+
+        rec_{safe_key}.onend = function() {{
+          isOn_{safe_key} = false;
+          document.getElementById('vBtn_{safe_key}').innerText  = '🎤 {label}';
+          document.getElementById('vBtn_{safe_key}').style.background = '#1a3a6e';
+          document.getElementById('vStat_{safe_key}').innerText = 'Done! Tap Copy then paste below.';
+        }};
+
+        rec_{safe_key}.start();
       }};
 
-      recognition_{key}.onerror = function(event) {{
-        document.getElementById('voiceStatus_{key}').innerHTML =
-          '❌ Error: ' + event.error + '. Try again.';
+      window.vCopyFn_{safe_key} = function() {{
+        var t = document.getElementById('vOut_{safe_key}').value;
+        navigator.clipboard.writeText(t).then(function() {{
+          document.getElementById('vStat_{safe_key}').innerText =
+            'Copied! Now long-press the notes box below and tap Paste.';
+        }}).catch(function() {{
+          document.getElementById('vStat_{safe_key}').innerText =
+            'Copy failed — please manually select all text above and copy.';
+        }});
       }};
-
-      recognition_{key}.onend = function() {{
-        recognizing_{key} = false;
-        document.getElementById('voiceBtn_{key}').innerHTML = '🎤 {label}';
-        document.getElementById('voiceBtn_{key}').style.background = '#1a3a6e';
-        document.getElementById('voiceStatus_{key}').innerHTML =
-          '✅ Done! Copy the text above and paste into the notes box.';
-      }};
-
-      recognition_{key}.start();
-    }}
-
-    function copyVoice_{key}() {{
-      var text = document.getElementById('voiceOut_{key}').value;
-      navigator.clipboard.writeText(text).then(function() {{
-        document.getElementById('voiceStatus_{key}').innerHTML =
-          '✅ Copied! Now paste (long-press → Paste) in the notes box above.';
-      }});
-    }}
+    }})();
     </script>
     """
-    st.components.v1.html(voice_html, height=200)
+    st.components.v1.html(voice_html, height=195)
 
 # ============================================================
 # NEWS2 SCORE CALCULATOR
