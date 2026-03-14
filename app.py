@@ -178,6 +178,29 @@ def push_to_cloud(payload):
     except Exception:
         pass
 
+def clean_for_pdf(text):
+    """Remove ALL unicode characters that fpdf Latin-1 fonts cannot handle."""
+    replacements = {
+        '\u2014': '-', '\u2013': '-', '\u2012': '-',   # em dash, en dash
+        '\u2018': "'", '\u2019': "'",                   # smart single quotes
+        '\u201c': '"', '\u201d': '"',                   # smart double quotes
+        '\u2022': '-', '\u2023': '-', '\u25cf': '-',    # bullet points
+        '\u2026': '...', '\u00b7': '.',                 # ellipsis, middle dot
+        '\u00ae': '(R)', '\u00a9': '(C)',               # registered, copyright
+        '\u00b0': ' degrees', '\u00b1': '+/-',          # degree, plus-minus
+        '\u03b1': 'alpha', '\u03b2': 'beta',            # Greek
+        '\u2192': '->', '\u2190': '<-', '\u2194': '<->',# arrows
+        '\u2264': '<=', '\u2265': '>=',                 # less/greater equal
+        '\u00d7': 'x', '\u00f7': '/',                   # multiply, divide
+        '\u00b5': 'u',                                   # micro
+        '\n\n\n': '\n\n',                               # triple newlines
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    # Final safety: encode to latin-1, replacing anything still unknown
+    text = text.encode('latin-1', 'replace').decode('latin-1')
+    return text
+
 def generate_pdf(title, patient_name, text_content, doctor_name=""):
     if not FPDF_AVAILABLE:
         return None
@@ -187,35 +210,135 @@ def generate_pdf(title, patient_name, text_content, doctor_name=""):
     pdf.rect(0, 0, 210, 22, 'F')
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", 'B', 13)
-    pdf.cell(0, 8,  txt="DR. GILL'S CARDIAC & CRITICAL CARE ICU — KERALA", ln=True, align='C')
+    pdf.cell(0, 8,  txt="DR. GILL'S CARDIAC & CRITICAL CARE ICU - KERALA", ln=True, align='C')
     pdf.set_font("Arial", size=9)
     pdf.cell(0, 7,  txt="AI Clinical Decision Support System v2.0", ln=True, align='C')
     pdf.set_text_color(0, 0, 0)
     pdf.ln(3)
     pdf.set_font("Arial", 'B', 13)
-    pdf.cell(0, 9,  txt=title.upper(), ln=True, align='C')
+    pdf.cell(0, 9,  txt=clean_for_pdf(title.upper()), ln=True, align='C')
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(2)
     pdf.set_font("Arial", 'B', 9)
     pdf.set_fill_color(230, 240, 255)
-    pdf.cell(0, 7, f"  Patient: {patient_name}", ln=True, fill=True)
-    pdf.cell(0, 7, f"  HOD: Dr. Alok Sehgal (Sr. Interventional Cardiologist)  |  Doctor: {doctor_name}", ln=True, fill=True)
-    pdf.cell(0, 7, f"  Generated: {datetime.datetime.now().strftime('%d %b %Y, %I:%M %p')}", ln=True, fill=True)
+    pdf.cell(0, 7, clean_for_pdf(f"  Patient: {patient_name}"), ln=True, fill=True)
+    pdf.cell(0, 7, clean_for_pdf(f"  HOD: Dr. Alok Sehgal (Sr. Interventional Cardiologist)  |  Doctor: {doctor_name}"), ln=True, fill=True)
+    pdf.cell(0, 7, clean_for_pdf(f"  Generated: {datetime.datetime.now().strftime('%d %b %Y, %I:%M %p')}"), ln=True, fill=True)
     pdf.ln(4)
     pdf.set_font("Arial", size=10)
     clean = text_content.replace('**','').replace('*','-').replace('#','')
-    clean = clean.encode('latin-1','replace').decode('latin-1')
+    clean = clean_for_pdf(clean)
     pdf.multi_cell(0, 6, txt=clean)
     pdf.set_y(-18)
     pdf.set_font("Arial",'I',7)
     pdf.set_text_color(120,120,120)
-    pdf.cell(0, 5, "CONFIDENTIAL — FOR CLINICAL USE ONLY | Dr. Gill's ICU App v2.0 | Kerala", align='C')
+    pdf.cell(0, 5, "CONFIDENTIAL - FOR CLINICAL USE ONLY | Dr. Gill's ICU App v2.0 | Kerala", align='C')
     tmpdir  = tempfile.mkdtemp()
     fpath   = os.path.join(tmpdir, f"{patient_name}_{title.replace(' ','_')[:30]}.pdf")
     pdf.output(fpath)
     return fpath
 
-def calc_news2(rr, spo2, supp_o2, sbp, hr, temp, avpu):
+# ============================================================
+# VOICE TYPING COMPONENT
+# ============================================================
+def voice_input_widget(label="🎤 Tap to Speak", key="voice"):
+    """Browser-based voice-to-text using Web Speech API. Works on Chrome/Android/iPhone."""
+    voice_html = f"""
+    <div style="margin:8px 0">
+      <button id="voiceBtn_{key}"
+        onclick="toggleVoice_{key}()"
+        style="background:#1a3a6e;color:white;border:none;padding:10px 22px;
+               border-radius:24px;font-size:15px;cursor:pointer;width:100%">
+        🎤 {label}
+      </button>
+      <div id="voiceStatus_{key}"
+           style="margin-top:6px;font-size:13px;color:#888;text-align:center">
+        Press button and speak clearly in English or Hindi
+      </div>
+      <textarea id="voiceOut_{key}"
+        style="width:100%;margin-top:6px;padding:8px;border-radius:8px;
+               border:1px solid #ccc;font-size:14px;min-height:80px;display:none"
+        placeholder="Spoken text will appear here..."></textarea>
+      <button id="copyBtn_{key}" onclick="copyVoice_{key}()"
+        style="display:none;margin-top:6px;background:#2d5a27;color:white;
+               border:none;padding:8px 18px;border-radius:8px;font-size:13px;cursor:pointer">
+        📋 Copy Text
+      </button>
+    </div>
+
+    <script>
+    var recognizing_{key} = false;
+    var recognition_{key};
+
+    function toggleVoice_{key}() {{
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {{
+        document.getElementById('voiceStatus_{key}').innerHTML =
+          '❌ Voice not supported. Use Chrome browser on Android/Desktop.';
+        return;
+      }}
+      if (recognizing_{key}) {{
+        recognition_{key}.stop();
+        return;
+      }}
+      recognition_{key} = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition_{key}.lang = 'en-IN';
+      recognition_{key}.interimResults = true;
+      recognition_{key}.maxAlternatives = 1;
+      recognition_{key}.continuous = true;
+
+      recognition_{key}.onstart = function() {{
+        recognizing_{key} = true;
+        document.getElementById('voiceBtn_{key}').innerHTML = '🔴 LISTENING... (Tap to Stop)';
+        document.getElementById('voiceBtn_{key}').style.background = '#8b1a1a';
+        document.getElementById('voiceStatus_{key}').innerHTML = '🎙️ Speak now...';
+        document.getElementById('voiceOut_{key}').style.display = 'block';
+        document.getElementById('copyBtn_{key}').style.display = 'inline-block';
+      }};
+
+      recognition_{key}.onresult = function(event) {{
+        var interim = '';
+        var final_txt = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {{
+          if (event.results[i].isFinal) {{
+            final_txt += event.results[i][0].transcript + ' ';
+          }} else {{
+            interim += event.results[i][0].transcript;
+          }}
+        }}
+        var box = document.getElementById('voiceOut_{key}');
+        box.value = box.value + final_txt;
+        document.getElementById('voiceStatus_{key}').innerHTML =
+          interim ? '🎙️ Hearing: ' + interim : '✅ Captured. Keep speaking or tap to stop.';
+      }};
+
+      recognition_{key}.onerror = function(event) {{
+        document.getElementById('voiceStatus_{key}').innerHTML =
+          '❌ Error: ' + event.error + '. Try again.';
+      }};
+
+      recognition_{key}.onend = function() {{
+        recognizing_{key} = false;
+        document.getElementById('voiceBtn_{key}').innerHTML = '🎤 {label}';
+        document.getElementById('voiceBtn_{key}').style.background = '#1a3a6e';
+        document.getElementById('voiceStatus_{key}').innerHTML =
+          '✅ Done! Copy the text above and paste into the notes box.';
+      }};
+
+      recognition_{key}.start();
+    }}
+
+    function copyVoice_{key}() {{
+      var text = document.getElementById('voiceOut_{key}').value;
+      navigator.clipboard.writeText(text).then(function() {{
+        document.getElementById('voiceStatus_{key}').innerHTML =
+          '✅ Copied! Now paste (long-press → Paste) in the notes box above.';
+      }});
+    }}
+    </script>
+    """
+    st.components.v1.html(voice_html, height=200)
+
+
     s = 0
     if rr <= 8 or rr >= 25: s += 3
     elif 9  <= rr <= 11:    s += 1
@@ -461,6 +584,11 @@ with T("🩺 ICU Frontline"):
         with v6: vgcs = st.number_input("GCS",3,15,15)
         vitals_str = f"BP:{vbp} HR:{vhr} RR:{vrr} SpO2:{vspo2}% Temp:{vtemp}C GCS:{vgcs}"
 
+    st.subheader("📝 Clinical Notes")
+    st.caption("🎤 Use voice typing OR type manually below. Works best on Chrome browser.")
+    voice_input_widget("Tap to Dictate Clinical Notes", key="frontline_voice")
+    st.caption("👆 After speaking → Copy → Paste in the box below")
+
     notes = st.text_area("Clinical Notes (history, examination, labs, ABG, ECG):", height=160,
         placeholder="65yr male, DM2/HTN, chest pain 2hrs, STEMI inferior, BP 90/60, HR 120...")
 
@@ -654,6 +782,9 @@ with T("📊 HOD Dashboard"):
                 st.markdown("---")
                 st.markdown("### 📈 Add Progress Note (Clinical Thread)")
                 with st.container(border=True):
+                    st.caption("🎤 Voice typing available — use Chrome browser for best results")
+                    voice_input_widget("Tap to Dictate Progress Note", key=f"hod_voice_{pname}")
+                    st.caption("👆 After speaking → Copy → Paste in the box below")
                     pnotes = st.text_area("New progress / findings:", key=f"pn_{pname}", height=70,
                         placeholder="New vitals, ABG result, ECG change, response to treatment...")
                     pfiles = st.file_uploader("Upload new reports:", type=['jpg','jpeg','png','pdf'],
