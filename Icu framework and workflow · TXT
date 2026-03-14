@@ -1,0 +1,353 @@
+DR. GILL'S CARDIAC ICU — WORLD-CLASS FRAMEWORK & WORKFLOW BLUEPRINT
+Kerala Cardiac ICU | AI-Powered Clinical Command System v2.0
+====================================================================
+
+PREPARED BY: Chief AI Architect (Generative AI Research Agent)
+DATE: 2025
+INSPIRED BY: Houston Methodist vICU, WHO Digital Health Framework,
+             Surviving Sepsis Campaign, AHA/ACC/ESC Guidelines 2024,
+             ISCCM India Guidelines, MIMIC-III/IV ICU Research Database
+
+====================================================================
+SECTION 1: YOUR MASTER PASSWORD (EXTREMELY CONFIDENTIAL)
+====================================================================
+
+YOUR MASTER PASSWORD:  GILL@ICU#2025
+
+Write this down and keep it ONLY with yourself.
+This gives you GOD-MODE access to the Master Control Panel.
+
+HOW TO USE:
+- On the login screen, type:  GILL@ICU#2025  (exactly as shown)
+- You will see the crown icon [👑 MASTER ADMIN] next to your name
+- You will see an extra tab: "👑 MASTER CONTROL" — no one else can see this
+- From there, you can add doctors, generate their PINs, remove them, and view the full audit log
+
+====================================================================
+SECTION 2: HOW TO ADD NEW DOCTORS (Step-by-Step for You)
+====================================================================
+
+STEP 1: Login using your Master Password: GILL@ICU#2025
+STEP 2: Click the "👑 MASTER CONTROL" tab (first tab, only visible to you)
+STEP 3: Scroll to "Doctor & Resident Management"
+STEP 4: Fill in:
+   - Full Name: Dr. [First Last]
+   - Role: Select from dropdown (Resident, Senior Resident, Consultant, etc.)
+   - Access Level: Resident / Senior / HOD
+   - Custom PIN: Type a 4-6 digit number, OR leave blank to auto-generate
+STEP 5: Click "Add Doctor to System"
+STEP 6: The system will show their PIN — write it down and share privately
+STEP 7: They use that PIN to login from any device
+
+TO REMOVE A DOCTOR:
+- Go to Master Control tab
+- Select their name from "Remove a Doctor" dropdown
+- Click "Remove Selected Doctor"
+- Their PIN immediately stops working
+
+====================================================================
+SECTION 3: COMPLETE ICU WORKFLOW (For Every Patient)
+====================================================================
+
+WORKFLOW A: NEW PATIENT ADMISSION
+===================================
+TIME 0 (Patient Arrives):
+  1. Duty Doctor opens app → Login with PIN
+  2. Go to "🩺 ICU Frontline" tab
+  3. Select "New Admission"
+  4. Enter patient name, age, gender
+  5. Assign ICU bed (from available beds list)
+  6. Enter primary diagnosis category
+  7. Fill vitals in the structured vitals section
+
+TIME 0-15 MINUTES (Initial Assessment):
+  8. Dictate full clinical history in the text area
+     (or type notes → OR upload photo of paper notes)
+  9. Upload ECG photo (taken with phone camera)
+  10. Upload chest X-ray photo
+  11. Upload any lab reports / ABG sheet
+
+TIME 15-30 MINUTES (AI Analysis):
+  12. Click "Quick Frontline Analysis" for routine case
+      OR "Expert Board Review" for complex/critical case
+      OR "Sepsis/Shock Protocol" if sepsis is suspected
+  13. AI gives:
+      - Working diagnosis
+      - Criticality score (1-10 with RED/YELLOW/GREEN)
+      - Treatment plan
+      - Drug interactions
+      - Investigation orders
+  14. All data AUTO-SAVED to Google Sheets
+  15. ICU Bed Board auto-updates
+
+---
+
+WORKFLOW B: DAILY HOD ROUND (Morning & Evening)
+=================================================
+HOD (Dr. Alok Sehgal or senior) logs in → goes to "📊 HOD Dashboard"
+  1. See ALL active patients in one dashboard
+  2. Each patient shows: Admitted date, total updates, last duty doctor
+  3. Open any patient → See their complete Master Clinical File
+  4. HOD can directly EDIT the master file in the text box
+  5. Click "Save HOD Edits" → saved immediately
+  6. To add NEW round findings:
+     - Type in "Add Progress Note" box (same screen, no switching tabs!)
+     - Upload new ABG / ECG / echo report
+     - Click "Analyze Progress & Update Thread"
+  7. AI automatically COMPARES new findings with yesterday's file
+     - Tells you: "Patient is IMPROVING / DETERIORATING / STABLE"
+     - Shows what changed and why
+     - Creates updated master summary
+
+---
+
+WORKFLOW C: SHIFT HANDOVER (Every 8-12 Hours)
+===============================================
+OUTGOING DOCTOR:
+  1. Go to "🔄 Shift Handover" tab
+  2. Enter outgoing doctor name
+  3. Enter incoming doctor name
+  4. Add any pending tasks or concerns
+  5. Click "Generate AI ISBAR Handover for ALL Active Patients"
+  6. AI generates ISBAR format for EVERY active patient automatically
+  7. Download as PDF → Sign → File
+
+INCOMING DOCTOR:
+  1. Login with their PIN
+  2. Read the handover PDF or screen
+  3. Go to ICU Bed Board → See bed-by-bed status
+  4. Start their shift
+
+---
+
+WORKFLOW D: DETERIORATING PATIENT EMERGENCY
+=============================================
+1. Nurse alerts duty doctor: "Patient in Bed X deteriorating"
+2. Doctor opens "🚨 Early Warning" tab
+3. Enter current vitals → Calculate NEWS2 Score instantly
+   - Score ≥ 7 (RED): IMMEDIATE action, call HOD
+   - Score 5-6 (ORANGE): Urgent review in 30 min
+   - Score 3-4 (YELLOW): Review in 1 hour
+4. If sepsis suspected: Run qSOFA calculator
+5. Click "AI Deterioration Analysis" → paste trends → AI predicts complications
+6. Go to "ICU Frontline" → Add Emergency Progress Note → "Expert Board Review"
+7. AI gives emergency management protocol
+
+---
+
+WORKFLOW E: DISCHARGE PLANNING
+================================
+1. HOD Dashboard → Open patient file
+2. Scroll to bottom → Click "Generate Discharge Summary"
+3. AI reads ENTIRE clinical journey (all notes, all updates) and auto-generates:
+   - Admission diagnosis
+   - Summary of ICU stay
+   - Discharge medications with doses
+   - Follow-up instructions
+   - Red flag symptoms
+4. Download Discharge Summary PDF
+5. Click "Mark as Discharged" → Bed becomes available automatically
+
+====================================================================
+SECTION 4: WHAT EACH TAB DOES (Simple Explanation for You)
+====================================================================
+
+TAB 1 — 👑 MASTER CONTROL (ONLY YOU CAN SEE THIS)
+   → Add/remove doctors, see audit trail, view system statistics
+
+TAB 2 — 🏥 ICU BED BOARD
+   → Visual 12-bed board showing which beds are empty vs occupied
+   → Update bed assignments
+
+TAB 3 — 🩺 ICU FRONTLINE
+   → Admit new patients OR add progress notes for existing patients
+   → Upload ECG, X-ray, lab reports
+   → Run AI analysis (Quick / Expert / Sepsis)
+   → Download PDF reports
+   → Get AI-suggested CME topics based on the case
+
+TAB 4 — 📊 HOD DASHBOARD
+   → See all patients (Active / Discharged)
+   → Complete clinical thread for each patient (full history)
+   → Add progress notes without switching screens
+   → AI trajectory comparison (improving/worsening)
+   → Generate discharge summaries
+
+TAB 5 — 📉 FLOWSHEET & TRENDS
+   → Enter hourly vitals manually
+   → Automatic trend charts (HR, RR, SpO2)
+   → Download flowsheet PDF
+
+TAB 6 — 🚨 EARLY WARNING SYSTEM
+   → NEWS2 Score Calculator (with instant RED/YELLOW/GREEN label)
+   → qSOFA Sepsis Screen
+   → AI Deterioration Analysis
+
+TAB 7 — 💊 MEDICATION SAFETY
+   → Full drug-drug interaction checker
+   → Dose adjustment for renal/hepatic impairment
+   → ICU infusion rate calculator (Norad, Dopamine, etc.)
+
+TAB 8 — 🔄 SHIFT HANDOVER
+   → Auto-generate ISBAR handover for ALL patients
+   → Download handover PDF
+
+TAB 9 — 🔬 ACADEMIC VAULT
+   → Generate clinical guidelines on any topic
+   → Quick 1-page reference cards
+   → CME quiz questions
+
+====================================================================
+SECTION 5: REQUIREMENTS TO RUN THIS APP
+====================================================================
+
+WHAT YOU NEED:
+
+1. STREAMLIT CLOUD ACCOUNT (FREE):
+   - Go to: https://streamlit.io/cloud
+   - Sign up with Google or GitHub (free)
+   - This is where the app lives online
+
+2. GITHUB ACCOUNT (FREE):
+   - Go to: https://github.com
+   - Create free account
+   - Upload the app code file there
+
+3. GOOGLE GEMINI API KEY (FREE tier available):
+   - Go to: https://aistudio.google.com/app/apikey
+   - Click "Create API Key"
+   - Copy the key (starts with "AIza...")
+   - This powers the AI brain
+
+4. HOW TO PUT API KEY IN STREAMLIT (SECRET SETTING):
+   - In Streamlit Cloud, click your app → Settings → Secrets
+   - Add this line:
+     GEMINI_API_KEY = "AIzaXXXXXXXXXXXXXXXXXXX"
+   - Save. The app will work.
+
+5. WHAT DEVICES WORK:
+   - Any smartphone (Android or iPhone) — optimized for mobile
+   - Tablet / iPad
+   - Laptop / Desktop
+   - Any browser (Chrome recommended)
+
+6. INTERNET CONNECTION:
+   - Needs internet to work (for AI and cloud save)
+   - Minimum 2G/3G connection works for text notes
+   - 4G/WiFi recommended for image uploads
+
+====================================================================
+SECTION 6: HOW OTHER DOCTORS ACCESS THIS APP
+====================================================================
+
+1. You (MASTER) generate a PIN for each doctor from Master Control tab
+2. Share the PIN privately with that doctor via WhatsApp or in person
+3. Share the app web link (e.g., https://yourhospital.streamlit.app)
+4. They open the link on their phone → Enter their PIN → Login
+5. Everything they do is saved to YOUR Google Sheets
+6. You can see their actions in the Audit Trail (Master Control tab)
+7. If any doctor leaves: Remove their PIN instantly from Master Control
+
+====================================================================
+SECTION 7: DATA SECURITY & STORAGE
+====================================================================
+
+WHERE DATA IS SAVED:
+- All patient data saves to YOUR Google Sheets (same webhook as original)
+- During the session, data is also in the app's memory
+- PDFs are generated on-demand and downloaded locally
+- No patient data is stored in any cloud server (HIPAA-friendly architecture)
+
+WHAT IS LOGGED:
+- Every login (who, when)
+- Every patient admission
+- Every analysis run
+- Every edit made
+- Every discharge
+- Available to you in the Audit Trail (Master Control)
+
+SECURITY LEVELS:
+- MASTER (you): Full access including admin panel, audit log, doctor management
+- HOD: Full clinical access (all patient tabs, can discharge)
+- Senior: Clinical access
+- Resident: Clinical access (same tabs, can be restricted in future versions)
+
+====================================================================
+SECTION 8: HOW TO SHOW THIS TO YOUR HOD & DEPARTMENT
+====================================================================
+
+DEMO SCRIPT (For Your Presentation):
+
+1. Open app → Enter master password → Show crown badge
+2. Show Master Control → "This is where I manage all doctors"
+3. Add a test doctor (Dr. Demo = PIN 1111) live in front of them
+4. Go to ICU Bed Board → Show the 12-bed visual grid
+5. Go to ICU Frontline → Admit a DEMO patient:
+   - Name: "Demo Patient" 
+   - Type: "65yr male, STEMI, BP 80/50, HR 120"
+   - Click Expert Board Review
+   - Show the AI analysis in real-time (WOW moment!)
+6. Go to HOD Dashboard → Open Demo Patient → Add progress note → Thread
+7. Show NEWS2 calculator with a critical score
+8. Show Medication Safety → Type common cardiac drugs → DDI check
+9. Generate Handover → Download PDF
+10. Generate Discharge Summary → Download PDF
+
+TALKING POINTS FOR HOD:
+- "All patient data is in one place, accessible from any phone"
+- "AI reviews every case like an expert board"
+- "Full audit trail — I can see who did what, when"
+- "Drug interactions automatically flagged — patient safety"
+- "Discharge summaries generated in seconds"
+- "Shift handover takes 2 minutes instead of 20"
+- "CME topics auto-suggested based on actual cases"
+- "This is FREE to run"
+
+====================================================================
+SECTION 9: FUTURE UPGRADES (ROADMAP)
+====================================================================
+
+VERSION 3.0 (Next Phase):
+- WhatsApp integration (send patient updates via WhatsApp)
+- Voice dictation (speak notes instead of typing)
+- ECG automated interpretation (AI reads ECG image and gives formal report)
+- Echo report AI interpretation
+- Real-time nursing chart (nurses add vitals from bedside tablet)
+- Family communication portal (patient family can see updates)
+
+VERSION 4.0 (Advanced):
+- MIMIC-style predictive analytics (mortality risk score)
+- Drug ordering system (connected to pharmacy)
+- Lab results integration (automatic import from hospital LIS)
+- Radiology report import
+- Multi-hospital dashboard (if you expand to other hospitals)
+
+====================================================================
+SECTION 10: QUICK TROUBLESHOOTING
+====================================================================
+
+PROBLEM: "AI Engine Offline"
+SOLUTION: Check that GEMINI_API_KEY is correctly set in Streamlit Secrets.
+          Go to: streamlit.io/cloud → Your App → Settings → Secrets
+
+PROBLEM: "Data not saving to Google Sheets"
+SOLUTION: The webhook URL may need to be re-deployed.
+          Open Google Sheets Apps Script → Deploy → Manage Deployments → Re-deploy
+
+PROBLEM: "App is slow"
+SOLUTION: This is normal for free Streamlit hosting. 
+          The first load takes 20-30 seconds (cold start).
+          After first load, it runs fast.
+
+PROBLEM: "Image upload fails"
+SOLUTION: Compress image before uploading. The app handles this automatically.
+          If still failing, check internet connection.
+
+PROBLEM: "I forgot my master password"
+SOLUTION: It is:  GILL@ICU#2025  (written in the code and in this document)
+
+====================================================================
+END OF FRAMEWORK DOCUMENT
+====================================================================
+Dr. Gill's Cardiac ICU Command System v2.0
+Kerala, India | World-Class AI Clinical Platform
