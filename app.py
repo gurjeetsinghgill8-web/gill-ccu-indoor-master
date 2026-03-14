@@ -431,9 +431,9 @@ if not is_engine_ready:
 # TABS
 # ============================================================
 if st.session_state.is_master:
-    tab_names = ["👑 Master Control","🏥 Bed Board","🩺 ICU Frontline","📊 HOD Dashboard","📉 Flowsheet","🚨 Early Warning","💊 Medications","🔄 Handover","🔬 Academic"]
+    tab_names = ["👑 Master Control","🏥 Bed Board","🩺 ICU Frontline","📊 HOD Dashboard","📉 Flowsheet","🚨 Early Warning","💊 Medications","🔄 Handover","🔬 Academic","💬 Feedback Portal"]
 else:
-    tab_names = ["🏥 Bed Board","🩺 ICU Frontline","📊 HOD Dashboard","📉 Flowsheet","🚨 Early Warning","💊 Medications","🔄 Handover","🔬 Academic"]
+    tab_names = ["🏥 Bed Board","🩺 ICU Frontline","📊 HOD Dashboard","📉 Flowsheet","🚨 Early Warning","💊 Medications","🔄 Handover","🔬 Academic","💬 Feedback Portal"]
 
 tabs = st.tabs(tab_names)
 
@@ -747,16 +747,16 @@ PLAIN TEXT ONLY. NO ASTERISKS."""
 with T("📊 HOD Dashboard"):
     st.header("📊 HOD Dashboard — Patient Files & Clinical Thread")
 
-    c1,c2 = st.columns([3,1])
-    with c1: vf = st.radio("Show:", ["Active","Discharged","All"], horizontal=True)
-    with c2:
-        if st.button("🔄 Refresh"):
+    hod_top1, hod_top2 = st.columns([3,1])
+    with hod_top1: vf = st.radio("Show:", ["Active","Discharged","All"], horizontal=True)
+    with hod_top2:
+        if st.button("🔄 Refresh from Cloud"):
             sync_from_cloud()
             st.rerun()
 
-    db = st.session_state.patients_db
+    db   = st.session_state.patients_db
     filt = {k:v for k,v in db.items() if
-            (vf=="Active" and v.get("status")=="Active") or
+            (vf=="Active"     and v.get("status")=="Active") or
             (vf=="Discharged" and v.get("status")=="Discharged") or
             vf=="All"}
 
@@ -769,30 +769,35 @@ with T("📊 HOD Dashboard"):
             badge  = "🔴 ACTIVE" if pdata.get("status")=="Active" else "✅ DISCHARGED"
             adm    = hist[0].get("date","?") if hist else "?"
 
-            with st.expander(f"{badge} | 🛏️ {pname} | Admitted: {adm} | Updates: {len(hist)}"):
-                s1,s2,s3 = st.columns(3)
-                s1.caption(f"Last update: {latest.get('date','?')}")
-                s2.caption(f"Last doctor: {latest.get('doctor','?')}")
-                s3.caption(f"Bed: {pdata.get('bed','?')}")
+            with st.expander(f"{badge}  |  🛏️ {pname}  |  Admitted: {adm}  |  Updates: {len(hist)}", expanded=False):
 
-                edited = st.text_area("Master Clinical File (HOD can edit):",
-                    value=latest.get("summary",""), height=200, key=f"edit_{pname}")
+                # ══════════════════════════════════════════════
+                # TWO-COLUMN LAYOUT — Left: Notes | Right: Tools
+                # ══════════════════════════════════════════════
+                left_col, right_col = st.columns([3, 2])
 
-                if st.button("💾 Save Edits", key=f"save_{pname}"):
-                    if hist:
-                        st.session_state.patients_db[pname]["history"][-1]["summary"] = edited
-                        log_action(f"HOD edited: {pname}")
-                        st.success("Saved!")
+                # ─── LEFT COLUMN: Master file + Progress Thread ───
+                with left_col:
+                    st.markdown("##### 📋 Master Clinical File")
+                    st.caption(f"Last update: {latest.get('date','?')}  |  Dr: {latest.get('doctor','?')}  |  Bed: {pdata.get('bed','?')}")
 
-                st.markdown("---")
-                st.markdown("### 📈 Add Progress Note (Clinical Thread)")
-                with st.container(border=True):
-                    st.caption("🎤 Voice typing available — use Chrome browser for best results")
-                    voice_input_widget("Tap to Dictate Progress Note", key=f"hod_voice_{pname}")
-                    st.caption("👆 After speaking → Copy → Paste in the box below")
-                    pnotes = st.text_area("New progress / findings:", key=f"pn_{pname}", height=70,
-                        placeholder="New vitals, ABG result, ECG change, response to treatment...")
-                    pfiles = st.file_uploader("Upload new reports:", type=['jpg','jpeg','png','pdf'],
+                    edited = st.text_area("HOD can edit directly:",
+                        value=latest.get("summary",""), height=220, key=f"edit_{pname}")
+
+                    if st.button("💾 Save HOD Edits", key=f"save_{pname}"):
+                        if hist:
+                            st.session_state.patients_db[pname]["history"][-1]["summary"] = edited
+                            log_action(f"HOD edited: {pname}")
+                            st.success("Saved!")
+
+                    st.markdown("---")
+                    st.markdown("##### 📈 Add Progress Note")
+                    voice_input_widget("🎤 Tap to Dictate", key=f"hv_{pname}")
+                    st.caption("Speak → Copy → Paste below")
+
+                    pnotes = st.text_area("New progress / findings:", key=f"pn_{pname}", height=80,
+                        placeholder="New vitals, ABG, ECG change, response to treatment...")
+                    pfiles = st.file_uploader("Upload new report/image:", type=['jpg','jpeg','png','pdf'],
                         accept_multiple_files=True, key=f"pf_{pname}")
 
                     if st.button("🔄 Analyze & Update Thread", type="primary", key=f"thread_{pname}"):
@@ -801,36 +806,28 @@ with T("📊 HOD Dashboard"):
                         elif not is_engine_ready:
                             st.error("AI offline.")
                         else:
-                            with st.spinner("AI comparing with previous data..."):
+                            with st.spinner("AI comparing with previous trajectory..."):
                                 try:
-                                    tp = f"""You are a Senior ICU Registrar updating the clinical thread for {pname}.
-
-PREVIOUS CLINICAL SUMMARY:
-{edited}
-
-NEW PROGRESS NOTE:
-{pnotes}
-
-TRAJECTORY COMPARISON:
-1. COMPARISON: Is patient IMPROVING, DETERIORATING, or STABLE? Be specific.
+                                    tp = f"""Senior ICU Registrar updating clinical thread for {pname}.
+PREVIOUS SUMMARY: {edited}
+NEW PROGRESS: {pnotes}
+1. COMPARISON: IMPROVING / DETERIORATING / STABLE — be specific with parameters
 2. UPDATED CRITICALITY SCORE (1-10, RED/YELLOW/GREEN)
-3. RESPONSE TO TREATMENT: Is current plan working?
-4. TREATMENT ADJUSTMENTS NEEDED
-5. PLAN FOR NEXT 24 HOURS
-6. WARD ROUND SUMMARY (5 lines for HOD round)
-
-PLAIN TEXT ONLY. NO ASTERISKS."""
+3. RESPONSE TO TREATMENT
+4. TREATMENT ADJUSTMENTS
+5. NEXT 24 HOUR PLAN
+6. HOD ROUND BRIEF (5 lines)
+PLAIN TEXT. NO ASTERISKS."""
                                     tc = [tp]
                                     if pfiles:
-                                        for f in pfiles:
-                                            if f.name.lower().endswith(('png','jpg','jpeg')) and PIL_AVAILABLE:
-                                                tc.append(optimize_image(f))
+                                        for uf in pfiles:
+                                            if uf.name.lower().endswith(('png','jpg','jpeg')) and PIL_AVAILABLE:
+                                                tc.append(optimize_image(uf))
                                     tres = smart_generate(tc)
                                     now  = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
                                     st.session_state.patients_db[pname]["history"].append({
                                         "date":now,"doctor":st.session_state.current_user,
-                                        "raw_notes":pnotes,"summary":tres,"type":"PROGRESS"
-                                    })
+                                        "raw_notes":pnotes,"summary":tres,"type":"PROGRESS"})
                                     push_to_cloud({"action":"new_entry","patient_name":pname,
                                         "doctor":st.session_state.current_user,"raw_notes":pnotes,
                                         "summary":tres,"date":now,"status":"Active"})
@@ -840,46 +837,147 @@ PLAIN TEXT ONLY. NO ASTERISKS."""
                                 except Exception as e:
                                     st.error(str(e))
 
-                if st.checkbox(f"📅 Full History", key=f"hist_{pname}"):
-                    for i,h in enumerate(reversed(hist)):
-                        with st.container(border=True):
-                            st.caption(f"Entry #{len(hist)-i} | {h.get('date','')} | {h.get('doctor','')} | {h.get('type','')}")
-                            txt = h.get("summary","")
-                            st.text(txt[:600]+"..." if len(txt)>600 else txt)
+                    # Full history toggle
+                    if st.checkbox(f"📅 Show Full History Timeline", key=f"hist_{pname}"):
+                        for i,h in enumerate(reversed(hist)):
+                            with st.container(border=True):
+                                st.caption(f"#{len(hist)-i} | {h.get('date','')} | {h.get('doctor','')} | {h.get('type','')}")
+                                txt = h.get("summary","")
+                                st.text(txt[:500]+"..." if len(txt)>500 else txt)
 
-                st.markdown("---")
-                if pdata.get("status")=="Active":
-                    dc1,dc2 = st.columns(2)
-                    with dc1:
-                        if st.button(f"📄 Generate Discharge Summary", key=f"ds_{pname}"):
-                            with st.spinner("Generating..."):
-                                try:
-                                    all_s = "\n\n---\n\n".join([h.get("summary","") for h in hist[-3:]])
-                                    dp = f"""Generate formal HOSPITAL DISCHARGE SUMMARY for {pname}, Cardiac ICU Kerala.
+                # ─── RIGHT COLUMN: Summary Generator + Discharge ───
+                with right_col:
+
+                    # ┌─────────────────────────────────────────┐
+                    # │  SUMMARY GENERATOR DROPDOWN             │
+                    # └─────────────────────────────────────────┘
+                    st.markdown("##### 📄 Generate Summary / Letter")
+                    summary_type = st.selectbox("Select summary type:", [
+                        "-- Choose --",
+                        "📋 Current Status Summary (Right Now)",
+                        "🏥 Discharge Summary (Going Home)",
+                        "🚑 Referral to Higher Centre",
+                        "🌙 Night / Shift Summary",
+                        "📊 Daily Progress Summary",
+                        "💊 Medication Reconciliation Summary",
+                        "👨‍👩‍👧 Family Counselling Letter",
+                    ], key=f"sumtype_{pname}")
+
+                    if st.button("⚡ Generate Selected Summary", key=f"gensumm_{pname}", type="primary"):
+                        if summary_type == "-- Choose --":
+                            st.warning("Please select a summary type.")
+                        elif not is_engine_ready:
+                            st.error("AI offline.")
+                        else:
+                            all_s = "\n---\n".join([h.get("summary","") for h in hist[-4:]])
+                            prompts = {
+                                "📋 Current Status Summary (Right Now)": f"""Write a CURRENT STATUS SUMMARY for {pname} in Cardiac ICU Kerala.
+Based on: {all_s}
+Include: Current diagnosis, present condition, active problems, current medications & infusions, vital trends, immediate plan.
+This is for handover / family update. Concise, professional. PLAIN TEXT. NO ASTERISKS.""",
+
+                                "🏥 Discharge Summary (Going Home)": f"""Write formal HOSPITAL DISCHARGE SUMMARY for {pname}, Cardiac ICU Kerala.
 Clinical journey: {all_s}
-Include: Admission diagnosis, ICU stay summary, investigations, procedures, discharge condition,
-discharge medications with doses, follow-up instructions, red flag symptoms, activity/diet restrictions.
-Under: Dr. Alok Sehgal (HOD). Attending: {st.session_state.current_user}.
-PLAIN TEXT ONLY. NO ASTERISKS."""
-                                    dt   = smart_generate([dp])
-                                    dpth = generate_pdf("DISCHARGE SUMMARY", pname, dt, st.session_state.current_user)
-                                    if dpth:
-                                        with open(dpth,"rb") as f:
-                                            st.download_button("📥 Download Discharge PDF", data=f,
-                                                file_name=f"{pname}_Discharge.pdf", mime="application/pdf",
-                                                key=f"dl_{pname}")
-                                except Exception as e:
-                                    st.error(str(e))
-                    with dc2:
-                        if st.button(f"🚪 Mark Discharged", key=f"md_{pname}"):
+Include: Admission diagnosis, ICU stay summary, key investigations, procedures done, discharge condition,
+discharge medications with doses, follow-up date & instructions, red flag symptoms, activity & diet restrictions.
+Under: Dr. Alok Sehgal (HOD). Attending: {st.session_state.current_user}. PLAIN TEXT. NO ASTERISKS.""",
+
+                                "🚑 Referral to Higher Centre": f"""Write a formal REFERRAL LETTER to a Higher Centre for {pname}.
+Based on ICU stay: {all_s}
+Include: Reason for referral, brief clinical history, current diagnosis, treatment given so far,
+current status & why higher centre needed, investigations done with results, current medications & doses,
+condition during transfer, referring doctor details.
+Referring: {st.session_state.current_user} | HOD: Dr. Alok Sehgal. Cardiac ICU Kerala. PLAIN TEXT. NO ASTERISKS.""",
+
+                                "🌙 Night / Shift Summary": f"""Write a SHIFT HANDOVER SUMMARY for {pname}.
+Based on: {all_s}
+Include: Current status, active concerns, ongoing infusions, pending results, what to watch for tonight,
+escalation plan if deteriorates. Keep very concise - 10 lines max. PLAIN TEXT. NO ASTERISKS.""",
+
+                                "📊 Daily Progress Summary": f"""Write a DAILY PROGRESS NOTE for {pname}.
+Based on today's data: {all_s}
+Include: Subjective (patient complaints), Objective (vitals, labs), Assessment (improving/worsening, why),
+Plan (what changes today). SOAP format. PLAIN TEXT. NO ASTERISKS.""",
+
+                                "💊 Medication Reconciliation Summary": f"""Write a MEDICATION RECONCILIATION SUMMARY for {pname}.
+Based on clinical data: {all_s}
+List: All current medications with doses/routes/frequency, medications stopped and why,
+new medications started and reason, any dose adjustments made, drug interactions flagged.
+PLAIN TEXT. NO ASTERISKS.""",
+
+                                "👨‍👩‍👧 Family Counselling Letter": f"""Write a FAMILY COUNSELLING LETTER for the family of {pname} in simple language.
+Based on ICU stay: {all_s}
+Explain in simple non-medical terms: what happened, what was done, current condition,
+what to expect, what family should do, follow-up instructions.
+Be compassionate and reassuring. Avoid heavy medical jargon. PLAIN TEXT. NO ASTERISKS.""",
+                            }
+                            chosen_prompt = prompts.get(summary_type, "")
+                            if chosen_prompt:
+                                with st.spinner(f"Generating {summary_type}..."):
+                                    try:
+                                        result_text = smart_generate([chosen_prompt])
+                                        st.session_state[f"summresult_{pname}"] = (summary_type, result_text)
+                                        log_action(f"Summary generated: {summary_type} for {pname}")
+                                    except Exception as e:
+                                        st.error(str(e))
+
+                    # Show result if available
+                    if f"summresult_{pname}" in st.session_state:
+                        stype, stext = st.session_state[f"summresult_{pname}"]
+                        st.success(f"Ready: {stype}")
+                        st.text_area("Generated Summary:", value=stext, height=200, key=f"summshow_{pname}")
+                        if FPDF_AVAILABLE:
+                            clean_type = stype.split(" ",1)[1] if " " in stype else stype
+                            spath = generate_pdf(clean_type.upper(), pname, stext, st.session_state.current_user)
+                            if spath:
+                                with open(spath,"rb") as sf:
+                                    st.download_button(
+                                        "📥 Download as PDF",
+                                        data=sf,
+                                        file_name=f"{pname}_{clean_type[:20].replace(' ','_')}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dlsumm_{pname}"
+                                    )
+
+                    st.markdown("---")
+
+                    # ┌─────────────────────────────────────────┐
+                    # │  DISCHARGE ACTION                       │
+                    # └─────────────────────────────────────────┘
+                    if pdata.get("status") == "Active":
+                        st.markdown("##### 🚪 Discharge Patient")
+                        if st.button(f"Mark {pname} as DISCHARGED", key=f"md_{pname}",
+                                     type="secondary", use_container_width=True):
                             st.session_state.patients_db[pname]["status"] = "Discharged"
                             for bed,occ in st.session_state.icu_beds.items():
-                                if occ==pname: st.session_state.icu_beds[bed]="Empty"
+                                if occ == pname:
+                                    st.session_state.icu_beds[bed] = "Empty"
                             push_to_cloud({"action":"discharge","patient_name":pname,
                                            "status":"Discharged","date":str(datetime.datetime.now())})
                             log_action(f"Discharged: {pname}")
-                            st.success(f"{pname} discharged.")
+                            st.success(f"{pname} discharged. Bed freed.")
                             st.rerun()
+
+                    st.markdown("---")
+
+                    # ┌─────────────────────────────────────────┐
+                    # │  QUICK STATS CARD                       │
+                    # └─────────────────────────────────────────┘
+                    st.markdown("##### 📊 Patient Quick Stats")
+                    los = "?"
+                    if hist:
+                        try:
+                            adm_dt = datetime.datetime.strptime(hist[0].get("date","")[:10], "%Y-%m-%d")
+                            los    = f"{(datetime.datetime.now() - adm_dt).days} days"
+                        except: pass
+                    st.markdown(f"""
+                    <div style='background:#1a2a3a;padding:12px;border-radius:8px;color:white;font-size:13px'>
+                      <b>Length of Stay:</b> {los}<br>
+                      <b>Total Updates:</b> {len(hist)}<br>
+                      <b>Bed:</b> {pdata.get('bed','Unassigned')}<br>
+                      <b>Status:</b> {pdata.get('status','?')}
+                    </div>
+                    """, unsafe_allow_html=True)
 
 # ============================================================
 # TAB: FLOWSHEET
@@ -1138,6 +1236,109 @@ Very concise. PLAIN TEXT. NO ASTERISKS."""
                 st.info(qr)
                 log_action(f"Quick ref: {qsel}")
             except Exception as e: st.error(str(e))
+
+# ============================================================
+# TAB: FEEDBACK PORTAL
+# ============================================================
+with T("💬 Feedback Portal"):
+    st.header("💬 Feedback & Improvement Portal")
+    st.caption("Any doctor or resident can submit suggestions, complaints, or bug reports here. All feedback goes directly to Admin (Dr. G.S. Gill).")
+
+    if "feedback_list" not in st.session_state:
+        st.session_state.feedback_list = []
+
+    fb_left, fb_right = st.columns([3, 2])
+
+    with fb_left:
+        st.markdown("#### 📝 Submit Your Feedback")
+        with st.container(border=True):
+            fb_type = st.selectbox("Feedback Type:", [
+                "🐛 Bug / Error Report",
+                "💡 New Feature Request",
+                "⚠️ Clinical Concern",
+                "👍 Positive Feedback",
+                "🔧 Improvement Suggestion",
+                "❓ Question / Confusion",
+                "Other"
+            ])
+            fb_priority = st.radio("Priority:", ["🟢 Low","🟡 Medium","🔴 Urgent"], horizontal=True)
+
+            st.markdown("##### 🎤 Voice or Type your feedback:")
+            voice_input_widget("Tap to Speak Feedback", key="feedback_voice")
+            st.caption("Speak → Copy → Paste below")
+
+            fb_text = st.text_area("Your feedback / suggestion / complaint:",
+                height=130,
+                placeholder="Example: 'Jab hum referral summary generate karte hain to usmein previous medications nahi aati...' OR 'Voice button ICU frontline mein kaam nahi kar raha mobile par...'")
+
+            fb_name = st.text_input("Your name (optional):",
+                value=st.session_state.current_user.split("(")[0].strip(),
+                placeholder="Leave blank to submit anonymously")
+
+            if st.button("📤 Submit Feedback", type="primary", use_container_width=True):
+                if not fb_text.strip():
+                    st.warning("Please write your feedback before submitting.")
+                else:
+                    entry = {
+                        "time":     datetime.datetime.now().strftime("%d %b %Y, %I:%M %p"),
+                        "type":     fb_type,
+                        "priority": fb_priority,
+                        "text":     fb_text.strip(),
+                        "by":       fb_name.strip() if fb_name.strip() else "Anonymous",
+                        "status":   "New"
+                    }
+                    st.session_state.feedback_list.insert(0, entry)
+                    log_action(f"Feedback submitted: {fb_type} by {entry['by']}")
+                    st.success("✅ Feedback submitted! Dr. Gill will review it.")
+                    st.balloons()
+
+    with fb_right:
+        st.markdown("#### 📬 All Submitted Feedback")
+        st.caption("Visible to Admin in Master Control. Helps improve the app.")
+
+        if not st.session_state.feedback_list:
+            st.info("No feedback submitted yet. Be the first to suggest an improvement!")
+        else:
+            for i, fb in enumerate(st.session_state.feedback_list):
+                pri_color = {"🟢 Low":"#1e4d1e","🟡 Medium":"#6b5e00","🔴 Urgent":"#6b1a1a"}.get(fb["priority"],"#333")
+                with st.container(border=True):
+                    st.markdown(f"""
+                    <div style='border-left:4px solid {pri_color};padding-left:10px'>
+                      <b>{fb['type']}</b> &nbsp;|&nbsp; {fb['priority']} &nbsp;|&nbsp;
+                      <small>{fb['time']}</small><br>
+                      <small>By: {fb['by']}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.write(fb["text"][:200] + ("..." if len(fb["text"]) > 200 else ""))
+
+                    # Admin can mark as resolved
+                    if st.session_state.is_master:
+                        col_fb1, col_fb2 = st.columns(2)
+                        with col_fb1:
+                            if fb.get("status") == "New":
+                                if st.button("✅ Mark Resolved", key=f"fbres_{i}"):
+                                    st.session_state.feedback_list[i]["status"] = "Resolved"
+                                    st.rerun()
+                        with col_fb2:
+                            if st.button("🗑️ Delete", key=f"fbdel_{i}"):
+                                st.session_state.feedback_list.pop(i)
+                                st.rerun()
+                    else:
+                        status_color = "🟢" if fb.get("status") == "Resolved" else "🟡"
+                        st.caption(f"Status: {status_color} {fb.get('status','New')}")
+
+        # Stats for admin
+        if st.session_state.is_master and st.session_state.feedback_list:
+            st.markdown("---")
+            total_fb   = len(st.session_state.feedback_list)
+            urgent_fb  = sum(1 for f in st.session_state.feedback_list if f["priority"] == "🔴 Urgent")
+            new_fb     = sum(1 for f in st.session_state.feedback_list if f.get("status") == "New")
+            resolved_fb= sum(1 for f in st.session_state.feedback_list if f.get("status") == "Resolved")
+            fm1,fm2,fm3,fm4 = st.columns(4)
+            fm1.metric("Total", total_fb)
+            fm2.metric("New", new_fb)
+            fm3.metric("Urgent", urgent_fb)
+            fm4.metric("Resolved", resolved_fb)
 
 # ============================================================
 # FOOTER
