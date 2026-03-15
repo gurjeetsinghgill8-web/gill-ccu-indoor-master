@@ -490,7 +490,7 @@ def show_agents():
 # ═══════════════════════════════════════════════════════════
 # PATIENT PANEL — used in BOTH Bed Board AND HOD Dashboard
 # ═══════════════════════════════════════════════════════════
-def render_patient_panel(pname, pdata):
+def render_patient_panel(pname, pdata, context="hod"):
     """
     FULL-SCREEN PATIENT PANEL — Accordion layout.
     Left: section buttons (fixed).  Right: selected section full width.
@@ -514,7 +514,7 @@ def render_patient_panel(pname, pdata):
     </div>""", unsafe_allow_html=True)
 
     # ── Section key ──
-    panel_key = f"sec_{re.sub(r'[^a-zA-Z0-9]','_',pname)}"
+    panel_key = f"sec_{context}_{re.sub(r'[^a-zA-Z0-9]','_',pname)}"
     ss(panel_key, "📋 Master File")
 
     SECTIONS = [
@@ -551,22 +551,22 @@ def render_patient_panel(pname, pdata):
                 "Master Clinical File — HOD can edit:",
                 value=latest.get("summary","No data yet."),
                 height=420,
-                key=f"mf_{pname}"
+                key=f"mf_{context}_mf_{pname}"
             )
             c1,c2 = st.columns(2)
             with c1:
-                if st.button("💾 Save Edits", key=f"mfsave_{pname}", type="primary"):
+                if st.button("💾 Save Edits", key=f"mfsave_{context}_mfsave_{pname}", type="primary"):
                     if hist:
                         st.session_state.patients_db[pname]["history"][-1]["summary"] = edited
                         log(f"HOD edit: {pname}"); st.success("✅ Saved!")
             with c2:
-                if FPDF_OK and st.button("📄 Download as PDF", key=f"mfdl_{pname}"):
+                if FPDF_OK and st.button("📄 Download as PDF", key=f"mfdl_{context}_mfdl_{pname}"):
                     dl_pdf_btn("📥 Download Case PDF","INTERIM CASE SUMMARY",
-                               pname, edited, f"mfdl2_{pname}", st.session_state.current_user)
+                               pname, edited, f"mfdl2_{context}_{pname}", st.session_state.current_user)
 
             # Full history toggle
             st.markdown("---")
-            if st.checkbox("📅 Show Full History Timeline", key=f"ht_{pname}"):
+            if st.checkbox("📅 Show Full History Timeline", key=f"ht_{context}_ht_{pname}"):
                 for i,h in enumerate(reversed(hist)):
                     with st.container(border=True):
                         st.caption(f"#{len(hist)-i} | {h.get('date','')} | {h.get('doctor','')} | {h.get('type','')}")
@@ -584,12 +584,12 @@ def render_patient_panel(pname, pdata):
             except: pass
             st.caption(f"{los_day} | Duty: {st.session_state.current_user}")
 
-            voice_box("🎤 Dictate Progress Note", key=f"pv_{pname}")
+            voice_box("🎤 Dictate Progress Note", key=f"pv_{context}_pv_{pname}")
             st.caption("Speak → Copy → Paste below ↓")
 
             pnotes = st.text_area(
                 "New progress / findings today:",
-                key=f"pn_{pname}", height=160,
+                key=f"pn_{context}_pn_{pname}", height=160,
                 placeholder="""Enter today's data:
 - Vitals: BP [x/y], HR [n], RR [n], SpO2 [n]%, Temp [n]
 - Subjective: Patient complaints / nursing report
@@ -598,10 +598,10 @@ def render_patient_panel(pname, pdata):
 - Any new events overnight"""
             )
             pflup = st.file_uploader("Upload new ECG / Report / Image:",
-                type=['jpg','jpeg','png','pdf'], accept_multiple_files=True, key=f"pf_{pname}")
+                type=['jpg','jpeg','png','pdf'], accept_multiple_files=True, key=f"pf_{context}_pf_{pname}")
 
             if st.button("🔄 Analyze Progress & Update Thread",
-                         type="primary", key=f"pthr_{pname}", use_container_width=True):
+                         type="primary", key=f"pthr_{context}_pthr_{pname}", use_container_width=True):
                 if not (pnotes.strip() or pflup):
                     st.warning("Add notes or upload a report.")
                 elif not engine_ok:
@@ -695,7 +695,7 @@ PLAIN TEXT ONLY. NO ASTERISKS. STRICTLY NO INVENTED DATA."""
             st.caption("Multi-Disciplinary Board will review the current Master File")
 
             if st.button("👑 Convene Expert Board",
-                         type="primary", key=f"exp_{pname}", use_container_width=True):
+                         type="primary", key=f"exp_{context}_exp_{pname}", use_container_width=True):
                 show_agents()
                 with st.spinner("Board convening..."):
                     try:
@@ -748,27 +748,27 @@ UPDATED TREATMENT PLAN:
 
 ════════════════════════════════════════════════
 PLAIN TEXT ONLY. NO ASTERISKS. STRICTLY NO INVENTED DATA."""
-                        st.session_state[f"eo_{pname}"] = smart_generate([ep])
+                        st.session_state[f"eo_{context}_{pname}"] = smart_generate([ep])
                         log(f"Expert board: {pname}")
                     except Exception as e: st.error(str(e))
 
-            if f"eo_{pname}" in st.session_state:
-                st.info(st.session_state[f"eo_{pname}"])
+            if f"eo_{context}_{pname}" in st.session_state:
+                st.info(st.session_state[f"eo_{context}_{pname}"])
                 if FPDF_OK:
                     dl_pdf_btn("📥 Expert Board PDF","EXPERT BOARD ASSESSMENT",
-                               pname, st.session_state[f"eo_{pname}"],
-                               f"expdl_{pname}", st.session_state.current_user)
+                               pname, st.session_state[f"eo_{context}_{pname}"],
+                               f"expdl_{context}_{pname}", st.session_state.current_user)
 
                 st.markdown("---")
                 st.markdown("**💬 HOD Challenge — Disagree with the Board?**")
                 st.caption("If the board made an error, challenge it here. The board will correct itself.")
                 reb = st.text_area(
                     "Your challenge / correction:",
-                    key=f"reb_{pname}", height=100,
+                    key=f"reb_{context}_reb_{pname}", height=100,
                     placeholder="e.g. 'ABG shows pH 7.28, pCO2 58, HCO3 26 — recalculate with Boston criteria. Respiratory acidosis not metabolic.'"
                 )
                 if st.button("⚖️ Force Board Re-evaluation",
-                             key=f"fre_{pname}", use_container_width=True):
+                             key=f"fre_{context}_fre_{pname}", use_container_width=True):
                     if not reb.strip():
                         st.warning("Write your challenge first.")
                     else:
@@ -777,7 +777,7 @@ PLAIN TEXT ONLY. NO ASTERISKS. STRICTLY NO INVENTED DATA."""
                             try:
                                 rp = f"""{AGENT_PERSONAS}
 You previously evaluated patient {pname}.
-Your previous assessment: {st.session_state[f"eo_{pname}"]}
+Your previous assessment: {st.session_state[f"eo_{context}_{pname}"]}
 The Senior HOD Doctor challenges this assessment: "{reb}"
 
 INSTRUCTION: With utmost respect to the HOD's clinical expertise:
@@ -787,7 +787,7 @@ INSTRUCTION: With utmost respect to the HOD's clinical expertise:
 4. Provide the corrected assessment in the same professional format
 PLAIN TEXT ONLY. NO ASTERISKS."""
                                 updated = smart_generate([rp])
-                                st.session_state[f"eo_{pname}"] = f"HOD CHALLENGE:\n{reb}\n\nBOARD CORRECTED RESPONSE:\n{updated}"
+                                st.session_state[f"eo_{context}_{pname}"] = f"HOD CHALLENGE:\n{reb}\n\nBOARD CORRECTED RESPONSE:\n{updated}"
                                 log(f"Board rebuttal: {pname}")
                                 st.rerun()
                             except Exception as e: st.error(str(e))
@@ -809,10 +809,10 @@ PLAIN TEXT ONLY. NO ASTERISKS."""
                 "🗣️ Relative Counseling (Hinglish — Roman Script)",
                 "👤 Patient Instruction Card (Simple English)",
                 "🌙 Shift / Handover Summary",
-            ], key=f"doctype_{pname}")
+            ], key=f"doctype_{context}_doctype_{pname}")
 
             if st.button("⚡ Generate Document", type="primary",
-                         key=f"gendoc_{pname}", use_container_width=True):
+                         key=f"gendoc_{context}_gendoc_{pname}", use_container_width=True):
                 if doc_type == "-- Choose --":
                     st.warning("Select a document type.")
                 elif not engine_ok:
@@ -968,18 +968,18 @@ PLAIN TEXT. NO ASTERISKS. ONLY DOCUMENTED DATA.""",
                         with st.spinner(f"Generating {doc_type}..."):
                             try:
                                 result_text = smart_generate([chosen])
-                                st.session_state[f"doc_result_{pname}"] = (doc_type, result_text)
+                                st.session_state[f"doc_result_{context}_{pname}"] = (doc_type, result_text)
                                 log(f"Document: {doc_type} for {pname}")
                             except Exception as e: st.error(str(e))
 
-            if f"doc_result_{pname}" in st.session_state:
-                dtyp, dtxt = st.session_state[f"doc_result_{pname}"]
+            if f"doc_result_{context}_{pname}" in st.session_state:
+                dtyp, dtxt = st.session_state[f"doc_result_{context}_{pname}"]
                 st.success(f"✅ Ready: {dtyp}")
-                st.text_area("Generated Document:", value=dtxt, height=400, key=f"docshow_{pname}")
+                st.text_area("Generated Document:", value=dtxt, height=400, key=f"docshow_{context}_docshow_{pname}")
                 if FPDF_OK:
                     clean_type = re.sub(r'[^\w\s]','',dtyp).strip()
                     dl_pdf_btn(f"📥 Download PDF", clean_type.upper(),
-                               pname, dtxt, f"docdl_{pname}", st.session_state.current_user)
+                               pname, dtxt, f"docdl_{context}_{pname}", st.session_state.current_user)
 
         # ══════════════════════════════════════════
         # SECTION: TRANSFER BED
@@ -992,10 +992,10 @@ PLAIN TEXT. NO ASTERISKS. ONLY DOCUMENTED DATA.""",
             if not empty_beds:
                 st.warning("No empty beds available for transfer.")
             else:
-                new_bed = st.selectbox("Transfer to:", empty_beds, key=f"tb_{pname}")
+                new_bed = st.selectbox("Transfer to:", empty_beds, key=f"tb_{context}_tb_{pname}")
                 st.caption(f"This will free {current_bed} and assign {pname} to {new_bed}")
                 if st.button("✅ Confirm Transfer", type="primary",
-                             key=f"tbc_{pname}", use_container_width=True):
+                             key=f"tbc_{context}_tbc_{pname}", use_container_width=True):
                     # Free old bed
                     if current_bed != "Unassigned":
                         st.session_state.icu_beds[current_bed] = "Empty"
@@ -1016,10 +1016,10 @@ PLAIN TEXT. NO ASTERISKS. ONLY DOCUMENTED DATA.""",
             else:
                 st.warning(f"⚠️ This will discharge {pname} and free their bed.")
                 st.caption("Use '📄 Documents' tab to generate discharge summary BEFORE archiving.")
-                confirm = st.checkbox(f"I confirm discharge of {pname}", key=f"dcc_{pname}")
+                confirm = st.checkbox(f"I confirm discharge of {pname}", key=f"dcc_{context}_dcc_{pname}")
                 if confirm:
                     if st.button("🛑 DISCHARGE & ARCHIVE", type="primary",
-                                 key=f"dca_{pname}", use_container_width=True):
+                                 key=f"dca_{context}_dca_{pname}", use_container_width=True):
                         st.session_state.patients_db[pname]["status"] = "Discharged"
                         for bed,occ in st.session_state.icu_beds.items():
                             if occ==pname: st.session_state.icu_beds[bed]="Empty"
@@ -1166,7 +1166,7 @@ with T("🏥 Bed Board"):
                     st.session_state.bed_panel_pt = None
                     st.rerun()
             st.markdown("---")
-            render_patient_panel(pname, pdata)
+            render_patient_panel(pname, pdata, context="bed")
         else:
             st.session_state.bed_panel_pt = None
             st.rerun()
@@ -1479,7 +1479,7 @@ with T("📊 HOD Dashboard"):
             with st.expander(
                 f"{badge} {pname}  |  Admitted: {adm}  |  LOS: {los}  |  Bed: {pdata.get('bed','?')}  |  Updates: {len(hist)}",
                 expanded=False):
-                render_patient_panel(pname, pdata)
+                render_patient_panel(pname, pdata, context="hod")
 
 # ═══════════════════════════════════════════════════════════
 # TAB: FLOWSHEET
